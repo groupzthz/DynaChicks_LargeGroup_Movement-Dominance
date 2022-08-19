@@ -9,6 +9,8 @@ library(lubridate)
 library(lme4)
 library(DHARMa)
 library(effects)
+source("functions.R")
+library(hms)
 
 ##### Loading and preparing Data ###########
 #load tracking data
@@ -103,6 +105,8 @@ times = list(ymd_hms(c("2019-11-12 03:30:00", "2019-11-12 17:30:00")),
 #splitting data into Hens
 splitHen = splitHenData(trackingData)
 
+
+#TODO: change this to 23:59:59
 hen_list <- vector(mode='list', length=length(hens))
 start = ymd_hms("2019-11-11 02:00:00")
 end = ymd_hms("2019-12-20 18:00:00")
@@ -112,8 +116,51 @@ for (hen in hens) {
     i = i+1
 } 
 trackingRel = mergeHenData(hen_list)
+#add Pen
+trackingRel[, Pen := as.numeric((unlist(regmatches(PackID, gregexpr('\\(?[0-9,.]+', PackID)))))]
+#add date grouping
+trackingRel[, Date:= as_date(Time)]
 #fwrite(trackingRel, file = "relTrackingData.csv", sep = ";")
 rm(trackingData)
+
+########### data checks #############################
+
+#there is data for every day?
+length(unique(trackingRel$Date)) == 40
+#which day is missing?
+unique(trackingRel$Date)
+#-> 05.12. is missing
+#check start and end time of each day by pen
+dayPenEntries = trackingRel[, .(min = min(Time), max = max(Time)), by = .(Date, Pen)]
+#-> missing data on 04.12. -06.12. -> exclude
+#-> helath assessment on 09.12. -> exclude
+trackingRel = trackingRel[!(Date == as.Date("2019-12-04")|
+                              Date == as.Date("2019-12-06")|
+                            Date == as.Date("2019-12-09")),]
+length(unique(trackingRel$Date)) #-> now we have 37 days in total of data
+
+
+#all individuals have data?
+length(unique(trackingRel$HenID)) == 36
+#all individuals have data every day?
+entriesPerDay = trackingRel[, length(unique(Date)), by = HenID]
+entriesPerDay[V1 != 37,] #Hen 1 (12), 65(33) and 84(35) don't have every day
+#which days are missing?
+days = unique(trackingRel$Date)
+
+trackingRel[HenID == 1,unique(Date)] #no data between the 22.11. and 19.12.
+trackingRel[HenID == 65,unique(Date)] #no data between 2.12. and 08.12.
+trackingRel[HenID == 84,unique(Date)] #no data between 07.12. and 08.12.
+
+
+#exclude HenID 1 and exclude december days before battery replacement
+trackingRel = trackingRel[!(Date == as.Date("2019-12-02")|
+                              Date == as.Date("2019-12-03")|
+                              Date == as.Date("2019-12-07")|
+                            Date == as.Date("2019-12-08")|
+                              HenID == 1),]
+entriesPerDay = trackingRel[, length(unique(Date)), by = HenID]
+
 
 ########### plot examples #########################
 hen_list <- vector(mode='list', length=length(hens))
@@ -126,7 +173,7 @@ for (hen in hens) {
   j= j+1
 } 
 
-library(hms)
+
 #make overview plots per hen
 for (i in 1:length(hens)){
   plotData = mergeHenData(hen_list[[i]])
@@ -151,18 +198,46 @@ for (i in 1:length(hens)){
 
 ########## Parameters ################
 
-#add date grouping
-trackingRel[, Date:= as_date(Time)]
-#add duration for all entries
-trackingRel[, Duration := (shift(Time, type="lead") - Time), by = HenID]
-# Set duration for last entry as 0
-trackingRel[is.na(Duration), Duration := 0]
+
+#mark true transitions
+trackingRel[, TrueTrans := TRUE]
+#mark the first stamps as false transitions
+trackingRel[1:length(unique(HenID)), TrueTrans := FALSE]
+
+#add duration for all entries -> careful need to first insert begin and end of day stamps if daily durations want to be calculated!
+
+#add end of each day
+trackingFull = rbind(trackingRel, 
+                     trackingRel[, tail(.SD, 1) , by = .(HenID, Date)][, c("Time", "TrueTrans") := .(ymd_hms(paste(Date, "23:59:59")), FALSE)])[order(HenID,Date)]
+
+#add beginning of each day
+trackingFull = rbind(trackingRel[, head(.SD, 1) , by = .(HenID, Date)][, c("Time", "TrueTrans") := .(ymd_hms(paste(Date, "00:00:00")), FALSE)], 
+                     trackingFull)[order(HenID,Date)]
+
+#include light-dark cycle
+trackingFull[, Light := TRUE]
+trackingFull[hour(Time) > 17, Light := FALSE]
+trackingFull[month(Time)== 11 & day(Time) < 15 & hour(Time) < 4, Light := FALSE]
+trackingFull[month(Time)== 11 & day(Time) < 22 & day(Time) > 14 & hour(Time) < 3, Light := FALSE]
+trackingFull[(month(Time)== 12| (month(Time)== 11 & day(Time) > 21)) & hour(Time) < 2, Light := FALSE]
+
+#add beginning and end of the night
+
+
+#add duration
+trackingFull[, Duration := (shift(Time, type="lead") - Time), by = HenID]
+# Set duration for last day entry as 1 sec
+trackingFull[hour(Time)== 23 & minute(Time)== 59, Duration := 1]
 
 #transitions per bird
-transitions = trackingRel[, .(Transitions = .N), by = .(HenID)]
+transitions = trackingFull[TrueTrans == TRUE, .(Transitions = .N), by = .(HenID)]
+#transitions per bird per day
+transDaily = trackingFull[TrueTrans == TRUE, .(Transitions = .N), by = .(HenID, Date)]
 
 #durations per zone per bird
-durations = trackingRel[, .(Duration = sum(Duration)), by = .(HenID, Zone)]
+durations = trackingFull[, .(Duration = sum(Duration)), by = .(HenID, Zone)]
+#durations per zone per bird per day
+durDaily = trackingFull[, .(Duration = sum(Duration)), by = .(HenID, Zone, Date)]
 
 plotDataDur = durations[socialData, on = "HenID"]
 
@@ -175,6 +250,42 @@ ggplot(plotDataDur, aes(x = Ratio, y = Duration, colour = Zone))+
 ggplot(plotDataTrans, aes(x = Ratio, y = Transitions))+
   geom_point()+
   geom_smooth()
+
+plotDataTransDaily = transDaily[socialData, on = "HenID"]
+
+plotDataDurDaily = durDaily[socialData, on = "HenID"]
+
+dataTransVar = plotDataTrans[, .(mean = mean(Transitions), sd = sd(Transitions), Ratio = mean(Ratio)), by = HenID]
+dataDurVar = plotDataDur[, .(mean = mean(Duration), sd = sd(Duration), Ratio = mean(Ratio)), by = .(HenID, Zone)]
+
+ggplot(plotDataTransDaily, aes(x = Ratio, y = Transitions))+
+  geom_point(aes(colour = as.factor(HenID)))+
+  geom_point(data = plotDataTransDaily[order(Ratio), .(mean = mean(Transitions)), by = Ratio], aes(x = Ratio, y = mean), 
+             colour = "red", size = 3)
+
+ggplot(plotDataTransDaily, aes(x = as.factor(Date), y = Transitions))+
+  geom_line(aes(group = HenID), colour = "darkgrey")+
+  geom_point(aes(colour = Ratio), size = 3)
+
+
+ggplot(na.omit(plotDataDurDaily), aes(x = as.factor(Date), y = Duration))+
+  geom_line(aes(group = HenID), colour = "darkgrey")+
+  geom_point(aes(colour = Ratio))+
+  facet_grid(.~Zone)
+
+ggplot(na.omit(plotDataDurDaily[Zone == "Ramp_Nestbox",]), aes(x = as.factor(Date), y = Duration))+
+  geom_line(aes(group = HenID), colour = "darkgrey")+
+  geom_point(aes(colour = Ratio))
+
+########## Test plot ###############
+
+plotData = trackingFull
+plotData[, Date := as.factor(Date)]
+plotData[, Time_x := as_hms(Time)]
+plotData[, Zone := factor(Zone, levels= c("Wintergarten", "Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
+
+#ideas for plots: for each individual an average step function plot
+#requires: average movement data: 
 
 ############ Comb Size ##############
 

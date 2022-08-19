@@ -30,6 +30,26 @@ extractInterval <- function(henData, start, end) {
   }
 }
 
+
+# take a timeline and fill all seconds 
+# Parameters: a single hen timeline
+# Output: a list of full sequence days for one hen
+#TODO: make this function work
+fillSeqHenData <- function(data) {
+  if (nrow(data)) {
+    days <- sort(unique(data[, Date]))
+    splitData <- list()
+    for (day in days) {
+      seq = seq(ymd_hms(paste(day, "00:00:00")), ymd_hms(paste(day, "23:59:59")), by = "sec")
+      #continue here with merging 
+      splitData <- append(splitData, list(filterHen(data, henID)))
+    }
+  } else { # Data is empty - return a list with one empty dataframe
+    splitData <- list(data) 
+  }
+  return(splitData)
+}
+
 ### Data-wrangling functions
 
 # Filter a timeline to a single hen
