@@ -95,21 +95,15 @@ trackingData[, Time := ymd_hms(Time)]
 
 #relevant hens
 hens = sort(unique(socialData$HenID))
-#relevant times
-times = list(ymd_hms(c("2019-11-12 03:30:00", "2019-11-12 17:30:00")),
-             ymd_hms(c("2019-11-21 03:30:00", "2019-11-21 17:30:00")),
-             ymd_hms(c("2019-11-30 02:30:00", "2019-11-30 17:30:00")),
-             ymd_hms(c("2019-12-08 02:30:00", "2019-12-08 17:30:00")),
-             ymd_hms(c("2019-12-20 02:30:00", "2019-12-20 17:30:00")))
+
 
 #splitting data into Hens
 splitHen = splitHenData(trackingData)
 
 
-#TODO: change this to 23:59:59
 hen_list <- vector(mode='list', length=length(hens))
-start = ymd_hms("2019-11-11 02:00:00")
-end = ymd_hms("2019-12-20 18:00:00")
+start = ymd_hms("2019-11-11 00:00:00")
+end = ymd_hms("2019-12-20 23:59:59")
 i = 1
 for (hen in hens) {
     hen_list[[i]] = extractInterval(splitHen[[hen]], start, end)
@@ -133,18 +127,18 @@ unique(trackingRel$Date)
 #check start and end time of each day by pen
 dayPenEntries = trackingRel[, .(min = min(Time), max = max(Time)), by = .(Date, Pen)]
 #-> missing data on 04.12. -06.12. -> exclude
-#-> helath assessment on 09.12. -> exclude
+#-> health assessment on 09.12. -> exclude
 trackingRel = trackingRel[!(Date == as.Date("2019-12-04")|
                               Date == as.Date("2019-12-06")|
                             Date == as.Date("2019-12-09")),]
-length(unique(trackingRel$Date)) #-> now we have 37 days in total of data
+length(unique(trackingRel$Date)) #-> now we have 36 days in total of data
 
 
 #all individuals have data?
 length(unique(trackingRel$HenID)) == 36
 #all individuals have data every day?
 entriesPerDay = trackingRel[, length(unique(Date)), by = HenID]
-entriesPerDay[V1 != 37,] #Hen 1 (12), 65(33) and 84(35) don't have every day
+entriesPerDay[V1 != 36,] #Hen 1 (12), 65(32) and 84(34) don't have every day
 #which days are missing?
 days = unique(trackingRel$Date)
 
@@ -163,6 +157,13 @@ entriesPerDay = trackingRel[, length(unique(Date)), by = HenID]
 
 
 ########### plot examples #########################
+#relevant times
+times = list(ymd_hms(c("2019-11-12 03:30:00", "2019-11-12 17:30:00")),
+             ymd_hms(c("2019-11-21 03:30:00", "2019-11-21 17:30:00")),
+             ymd_hms(c("2019-11-30 02:30:00", "2019-11-30 17:30:00")),
+             ymd_hms(c("2019-12-08 02:30:00", "2019-12-08 17:30:00")),
+             ymd_hms(c("2019-12-20 02:30:00", "2019-12-20 17:30:00")))
+
 hen_list <- vector(mode='list', length=length(hens))
 j = 1
 for (hen in hens) {
@@ -198,21 +199,39 @@ for (i in 1:length(hens)){
 
 ########## Parameters ################
 
+#add duration for all entries 
+#-> careful need to first insert begin and end of day stamps if daily durations want to be calculated!
+#add beginning and end of each day by looping through every hen and every day and adding the stamps
+# (from original data set (splitHen))
+hen_list <- vector(mode='list', length=length(unique(trackingRel$hens)))
+hens = unique(trackingRel$HenID)
+days = as.character(unique(trackingRel$Date))
+j = 1
+for (hen in hens) {
+  hen_list[[j]] <- vector(mode='list', length=length(days))
+  i = 1
+  for (day in days){
+    start = ymd_hms(paste(day, "00:00:00"))
+    end = ymd_hms(paste(day, "23:59:59"))
+    hen_list[[j]][[i]] = extractInterval(splitHen[[hen]], start, end)
+    i = i+1
+  }
+  hen_list[[j]] = mergeHenData(hen_list[[j]])
+  j= j+1
+} 
+trackingFull = mergeHenData(hen_list)
 
-#mark true transitions
-trackingRel[, TrueTrans := TRUE]
-#mark the first stamps as false transitions
-trackingRel[1:length(unique(HenID)), TrueTrans := FALSE]
+#remove last real tracking data
+rm(splitHen)
+#add Pen
+trackingFull[, Pen := as.numeric((unlist(regmatches(PackID, gregexpr('\\(?[0-9,.]+', PackID)))))]
+#add date grouping
+trackingFull[, Date:= as_date(Time)]
+# mark true transitions
+trackingFull[, TrueTransition := TRUE]
+trackingFull[hour(Time) == 0 & minute(Time) == 0 & second(Time) == 0, TrueTransition := FALSE] 
+trackingFull[hour(Time) == 23 & minute(Time) == 59 & second(Time) == 59, TrueTransition := FALSE] 
 
-#add duration for all entries -> careful need to first insert begin and end of day stamps if daily durations want to be calculated!
-
-#add end of each day
-trackingFull = rbind(trackingRel, 
-                     trackingRel[, tail(.SD, 1) , by = .(HenID, Date)][, c("Time", "TrueTrans") := .(ymd_hms(paste(Date, "23:59:59")), FALSE)])[order(HenID,Date)]
-
-#add beginning of each day
-trackingFull = rbind(trackingRel[, head(.SD, 1) , by = .(HenID, Date)][, c("Time", "TrueTrans") := .(ymd_hms(paste(Date, "00:00:00")), FALSE)], 
-                     trackingFull)[order(HenID,Date)]
 
 #include light-dark cycle
 trackingFull[, Light := TRUE]
@@ -222,7 +241,7 @@ trackingFull[month(Time)== 11 & day(Time) < 22 & day(Time) > 14 & hour(Time) < 3
 trackingFull[(month(Time)== 12| (month(Time)== 11 & day(Time) > 21)) & hour(Time) < 2, Light := FALSE]
 
 #add beginning and end of the night
-
+#TODO
 
 #add duration
 trackingFull[, Duration := (shift(Time, type="lead") - Time), by = HenID]
@@ -285,8 +304,35 @@ plotData[, Time_x := as_hms(Time)]
 plotData[, Zone := factor(Zone, levels= c("Wintergarten", "Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
 
 #ideas for plots: for each individual an average step function plot
-#requires: average movement data: 
+#requires: full sequence for every day
 
+splitHen = splitHenData(trackingFull)
+hens = unique(trackingFull$HenID)
+average_hen <- vector(mode='list', length=length(hens))
+i = 1
+for (i in 1:length(hens)) {
+    cat("Hen", i)
+    list = fillSeqHenData(splitHen[[i]])
+    #cat("done")
+    average_hen[[i]] = averageDailyZone(list)
+} 
+
+
+#make overview plots per hen
+for (i in 1:length(hens)){
+  plotData = average_hen[[i]]
+  plotData[, Zone := factor(Zone, levels= c("Wintergarten", "Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
+  ggplot(plotData, aes(x = Time, y = Zone)) + 
+    geom_step(group = 1) + 
+    geom_point() + 
+    labs(x = "time", y = "Zones") +
+    ggtitle(hens[i])+
+    theme_bw(base_size = 18)
+
+  
+  ggsave(filename = paste0(hens[i],".png"), plot = last_plot(), 
+         width = 40, height = 18, dpi = 300, units = "cm")
+}
 ############ Comb Size ##############
 
 
