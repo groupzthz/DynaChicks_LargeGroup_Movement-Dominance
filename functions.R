@@ -126,6 +126,15 @@ mergeHenData <- function(henDataList) {
   return(combined)
 }
 
+#insert a row at a certain index in the data 
+# Parameter: the data.table, the index of the row to insert, and the row to be inserted
+# Output: the full data.table
+
+insertRow <- function(henData, index, newRow){
+  partA = henData[1:index-1,]
+  partB = henData[index:dim(henData)[1],]
+  combined = rbind(partA,newRow, partB, fill = T)
+}
 
 
 
@@ -159,4 +168,43 @@ sumDurations <- function(data, zones) {
     sums[is.na(TotalDuration), TotalDuration := as.difftime(0, units="secs")]
   }
   return(sums)
+}
+
+
+### Vertical travel distance 
+
+#Retunr the distance travelled between zones
+#Parameters: two zones to compare
+defineDistance = function(zones) {
+  
+  zone1 = zones[1]
+  zone2 = zones[2]
+  
+  if((zone1 == zone2)|
+     is.na(zone1) | is.na(zone2)){
+    distance = 0
+  } 
+  else if((zone1 == "Tier_4" & zone2 == "Ramp_Nestbox")|
+     (zone2 == "Tier_4" & zone1 == "Ramp_Nestbox")|
+     (zone1 == "Tier_2" & zone2 == "Ramp_Nestbox")|
+     (zone2 == "Tier_2" & zone1 == "Ramp_Nestbox")|
+     (zone1 == "Tier_2" & zone2 == "Litter")|
+     (zone1 == "Litter" & zone2 == "Tier_2")){
+    distance = 1
+  }
+  else if((zone1 == "Tier_4" & zone2 == "Tier_2")|
+          (zone2 == "Tier_4" & zone1 == "Tier_2")|
+          (zone1 == "Litter" & zone2 == "Ramp_Nestbox")|
+          (zone2 == "Litter" & zone1 == "Ramp_Nestbox")
+          ){
+    distance = 2
+  }
+  else if((zone1 == "Tier_4" & zone2 == "Litter")|
+          (zone2 == "Tier_4" & zone1 == "Litter")){
+    distance = 3
+  }
+  else {
+    stop("Error: the zones contained an unknown zone")
+  }
+  return(distance)
 }
