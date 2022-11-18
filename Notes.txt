@@ -1,0 +1,13 @@
+Variables of interest:
+
+(remove dusk hour?)
+Vertical travel distance (light hours) per inside hours (divide by seconds inside)
+	(number of vertically crossed zones (from 4-1 for example is 3, how many passed) -> replace all wintergarden by litter 
+Sleeping spot (dark hours) (on 4 or not, 1/0)
+	what to do if they were partially on 4?
+Time in Nestbox zone (time point, how long after lights on to reach medium time in nestbox)
+Wintergarden (yes/no) (most variation for Camille)(maybe check latencies/durations)
+Food related is bird on 2/4 during feed run? Duration(during feeder) - Duration(no feeder)/total duration 
+	repeat around each time point 50 times (then divide by 50) 
+	mean over the different times (maybe delete first and last run because too close to lights out)  
+

@@ -35,13 +35,13 @@ extractInterval <- function(henData, start, end) {
 # take a timeline and fill all seconds 
 # Parameters: a single hen timeline
 # Output: a list of full sequence days for one hen
-fillSeqHenData <- function(data) {
+fillSeqHenData <- function(data, start = "00:00:00", end = "23:59:59", interval = "sec") {
   if (nrow(data)) {
     days <- as.character(unique(data[, Date]))
     splitData <- list()
     for (day in days) {
-      seq = data.table(Time = seq(ymd_hms(paste(day, "00:00:00")), 
-                                  ymd_hms(paste(day, "23:59:59")), by = "sec"))
+      seq = data.table(Time = seq(ymd_hms(paste(day, start)), 
+                                  ymd_hms(paste(day, end)), by = interval))
       #extract data for that day 
       relDat = data[Date == day,]
       #merge timelines together
@@ -126,6 +126,31 @@ mergeHenData <- function(henDataList) {
   return(combined)
 }
 
+# Filter a timeline to a single date
+# Parameters: a timeline and a date
+# Output: a single-date timeline
+filterDate <- function(data, date) {
+  data[Date == date]
+}
+
+# Convert a timeline into an list of single-date timelines
+# Parameter: a timeline
+# Output: a list of single-date timelines
+splitDateData <- function(data) {
+  if (nrow(data)) {
+    dates <- sort(unique(data[, Date]))
+    splitData <- list()
+    for (date in dates) {
+      splitData <- append(splitData, list(filterDate(data, date)))
+    }
+  } else { # Data is empty - return a list with one empty dataframe
+    splitData <- list(data) 
+  }
+  return(splitData)
+}
+
+
+
 #insert a row at a certain index in the data 
 # Parameter: the data.table, the index of the row to insert, and the row to be inserted
 # Output: the full data.table
@@ -173,8 +198,8 @@ sumDurations <- function(data, zones) {
 
 ### Vertical travel distance 
 
-#Retunr the distance travelled between zones
-#Parameters: two zones to compare
+#Return the distance traveled between two zones
+#Parameters: vector containing two zones to compare
 defineDistance = function(zones) {
   
   zone1 = zones[1]
@@ -207,4 +232,91 @@ defineDistance = function(zones) {
     stop("Error: the zones contained an unknown zone")
   }
   return(distance)
+}
+
+### Sequence similarity
+
+#calculates similarity of movement sequences between individuals 
+#input: trackingdata
+# output: data.table containing similarity for each day between each hen pair
+similarityBetween = function(data, zone = F, interval = "day"){
+  cat("Calculating similarity of movement between individuals on days \n")
+  splitDate = splitDateData(data)
+  splitHen = vector(mode='list', length= length(unique(data$HenID)))
+  allPairs = vector(mode='list', length= length(splitDate))
+  comblist <- combn(unique(data$Hen),2,FUN=list)
+  cat("To do for", length(unique(data$Hen))*(length(unique(data$Hen))-1)/2, "pairs of individuals and", length(splitDate), "days. \n")
+  for (i in 1:length(splitDate)){
+    splitHen[[i]] = splitHenData(splitDate[[i]])
+    if(interval == "day"){
+      start = splitHen[[i]][[1]][TrueTransition == F & DayIndic == F,as.character(as.ITime(Time))][1]
+      end = splitHen[[i]][[1]][TrueTransition == F & DayIndic == F,as.character(as.ITime(Time))][2]
+    }
+    else if(interval == "morning"){
+      start = splitHen[[i]][[2]][TrueTransition == F & DayIndic == F,as.character(as.ITime(Time))][1]
+      end = "09:00:00"
+    }
+    for (j in 1: length(splitHen[[i]])){
+      splitHen[[i]][[j]] = fillSeqHenData(splitHen[[i]][[j]], start, end)[[1]]
+      splitHen[[i]][[j]][, dupl := duplicated(Time)]
+      splitHen[[i]][[j]] = splitHen[[i]][[j]][dupl ==F,] 
+    }
+    fullDate = mergeHenData(splitHen[[i]])
+    fullDate[, TimePure := as.ITime(Time)]
+    date = fullDate[,unique(Date)]
+    names(allPairs)[i] = as.character(date)
+    #save all possible pair combinations
+    allPairs[[i]] = data.table(Pair1 = combn(unique(data$Hen),2)[1,], 
+                               Pair2 = combn(unique(data$Hen),2)[2,])
+    #if a certain zone should be isolated
+    if(zone != F){
+      fullDate[Zone == zone, ZoneIso := zone]
+      fullDate[Zone != zone, ZoneIso := "Other"]
+      fullDate = dcast(fullDate, formula = TimePure ~ Hen, value.var = "ZoneIso")
+      #if no zone needs to be isolated
+      } else{
+        fullDate = dcast(fullDate, formula = TimePure ~ Hen, value.var = "Zone")
+      }
+    if (dim(fullDate)[2]-1 != length(unique(data$Hen))){
+        hens = unique(data$Hen)[!(unique(data$Hen) %in% colnames(fullDate)[-1])]
+        for(hen in hens){
+          fullDate[, (hen) := NA]
+        }
+    }
+    #calculate the similarity by dividing the amount of zones shared at the same time 
+    #by the total amount of time
+    allPairs[[i]]  = cbind(allPairs[[i]], t(fullDate[,lapply(comblist,
+                                         function(x) sum(get(x[1]) == get(x[2]))/length(get(x[1])))]))
+    allPairs[[i]] = rbind(allPairs[[i]], data.table(Pair1 = unique(data$Hen),
+                                                    Pair2 = unique(data$Hen)), fill = T)
+    allPairs[[i]] = as.matrix(dcast(allPairs[[i]], Pair1 ~ Pair2, value.var = "V1", drop = F)[, -1])
+    rownames(allPairs[[i]]) = colnames(allPairs[[i]]) 
+    cat("Done for", i, "days. \n")
+    }
+  
+  return(allPairs)
+}
+
+#calculates similarity of movement sequences within individuals
+# input: trackingdata
+# output: data.table with similarity for consecutive measure days for each hen
+#TODO: how long (over days) still higher within compared to between
+
+similarityWithin = function(data){
+  cat("Calculating similarity of movement within individuals between days \n")
+  splitHen = splitHenData(data)
+  fullDate = vector(mode='list', length= length(unique(data$Date)))
+  allDates = data.table(Date = unique(data$Date))
+  cat("To do for", length(splitHen), "individuals and", dim(allDates)[1], "days. \n")
+  for (i in 1:length(splitHen)){
+    fullHen = mergeHenData(fillSeqHenData(splitHen[[i]]))
+    fullHen[, dupl := duplicated(Time)]
+    fullHen = fullHen[dupl == F,]
+    entry = fullHen[ , ZoneComp := Zone == Zone[match(shift(Time, n = 24*3600), Time)]][
+      , (sum(ZoneComp == T)/(sum(ZoneComp == T)+ sum(ZoneComp == F))), by = .(Date = as.Date(Time))]
+    names(entry)[2] = unique(fullHen$Hen)
+    allDates = cbind(allDates, entry[,2])
+  cat("Done for", i, "individuals. \n")
+  }
+  return(allDates)
 }
