@@ -373,6 +373,9 @@ rm(trackingData)
 
 ###### data checks #############################
 
+#TODO: make sure exclusion of days/data does not lead to wrong entries when adding 
+# beginning and end of day later
+
 #there is data for every day?
 allDays = seq(ymd("2019-11-09"), to = ymd("2020-06-28"), by = "day")
 length(unique(trackingRel$Date)) == length(allDays)
@@ -385,20 +388,21 @@ allDays[which(!(allDays %in% unique(trackingRel$Date)))]
 #days to exclude
 excl = c(ymd("2019-12-09"), ymd("2020-01-06"), ymd("2020-02-10"),
          ymd("2020-03-16"), ymd("2020-05-04"), ymd("2020-06-02"), #health assessments
-         ymd("2019-12-04"), ymd("2019-12-06"), ymd("2020-01-12"), ymd("2020-06-20"), #missing data
+         ymd("2019-12-04"), ymd("2019-12-06"), ymd("2019-12-21"),
+         ymd("2019-12-26"), ymd("2020-01-12"), ymd("2020-01-20"), ymd("2020-06-20"), #missing data
          seq(ymd("2020-01-21"), to = ymd("2020-02-03"), by = "day"), #different configuration
-         seq(ymd("2020-05-16"), to = ymd("2020-05-26"), by = "day"), # experimental light change
+         seq(ymd("2020-05-17"), to = ymd("2020-05-26"), by = "day"), # experimental light change
          ymd("2020-01-07"),ymd("2020-02-25"),ymd("2020-03-11") #other disturbances
          )
 
 trackingRel = trackingRel[!(Date %in% excl),]
 
-length(unique(trackingRel$Date)) #-> now we have 184 days in total of data
+length(unique(trackingRel$Date)) #-> now we have 179 days in total of data
 
 #do all individuals have data?
 length(unique(trackingRel$HenID)) == 36
 #all individuals have data every day?
-entriesPerDay = trackingRel[, length(unique(Date)), by = HenID][V1 != 184,][, miss := 184-V1]
+entriesPerDay = trackingRel[, length(unique(Date)), by = HenID][V1 != 179,][, miss := 179-V1]
 entriesPerDay
 
 #which days are missing for those hens?
@@ -500,6 +504,7 @@ plotData[, Zone := factor(Zone, levels= c("Wintergarten", "Litter", "Tier_2", "R
 #data cleaning step
 #remove Wintergarten entries outside time that Wintergarten can be open
 #delete all Wintergarten entries at night (not possible, tracking system errors)
+#TODO: maybe ab 17:00 nicht 16:45
 trackingRel = trackingRel[!(hour(Time) > 16 & minute(Time) > 45 & Zone == "Wintergarten"), ]
 #delete all Wintergarten entries before 9 in the morning (not possible, tracking system error)
 trackingRel = trackingRel[!(hour(Time) < 10 & Zone == "Wintergarten"), ]
@@ -642,65 +647,67 @@ trackingFull = trackingFull[Duration > 0,]
 #Problem: need to deal with time shift? I think not will resolve themselves  
 
 ###### Between individuals ####
-betweenIndividuals = similarityBetween(trackingFull)
+betweenIndividuals = similarityBetween(trackingFull[Date < as.Date("2020-03-15"),])
+betweenIndividuals2 = similarityBetween(trackingFull[Date > as.Date("2020-03-14"),])
+
+#TODO: data check: make sure rows and cols are in the same order for every day 
+
+meanData = data.table(Date = unique(trackingFull$Date),
+                      Mean = c(unlist(lapply(betweenIndividuals, function(x){ mean(x, na.rm = TRUE)})),
+                               unlist(lapply(betweenIndividuals2, function(x){ mean(x, na.rm = TRUE)}))),
+                      Median = c(unlist(lapply(betweenIndividuals, function(x){ median(x, na.rm = TRUE)})),
+                               unlist(lapply(betweenIndividuals2, function(x){ median(x, na.rm = TRUE)}))),
+                      Max = c(unlist(lapply(betweenIndividuals, function(x){ max(x, na.rm = TRUE)})),
+                              unlist(lapply(betweenIndividuals, function(x){ max(x, na.rm = TRUE)}))),
+                      SD = c(unlist(lapply(betweenIndividuals, function(x){ sd(x, na.rm = TRUE)})),
+                               unlist(lapply(betweenIndividuals2, function(x){ sd(x, na.rm = TRUE)}))),
+                      Above = c(unlist(lapply(betweenIndividuals, function(x){ sum(x>0.6, na.rm = TRUE)})),
+                              unlist(lapply(betweenIndividuals2, function(x){ sum(x>0.6, na.rm = TRUE)}))),
+                      Below = c(unlist(lapply(betweenIndividuals, function(x){ sum(x<0.2, na.rm = TRUE)})),
+                                unlist(lapply(betweenIndividuals2, function(x){ sum(x<0.2, na.rm = TRUE)})))
+)
+
+ggplot(meanData, aes(x = Date))+
+  geom_pointrange(aes(y = Mean, ymin = Mean-SD, ymax = Mean+SD))+
+  geom_point(aes(y = Median), color = "red")+
+  #geom_point(aes(y = Max))+
+  theme_classic(base_size = 18)
+ggplot(meanData, aes(x = Date))+
+  #geom_point(aes(y = Below))+
+  #geom_smooth(aes(y = Below))+
+  geom_point(aes(y = Above))+
+  geom_smooth(aes(y = Above))+
+  theme_classic(base_size = 18)
+
+similSimply1 = lapply(betweenIndividuals, function(x){ x[x < 0.7|is.na(x)] = 0; x[(x > 0.7)|(x == 0.7)] = 1; x})
+similSimply1 = Reduce('+', similSimply1)
+similSimply2 = lapply(betweenIndividuals2, function(x){ x[x < 0.7|is.na(x)] = 0; x[(x > 0.7)|(x == 0.7)] = 1; x})
+similSimply2 = Reduce('+', similSimply2)
+similSimply = similSimply1 + similSimply2
+
+similSimply1 = lapply(betweenIndividuals, function(x){ x[is.na(x)] = 0; x})
+similSimply1 = Reduce('+', similSimply1)
+similSimply2 = lapply(betweenIndividuals2, function(x){ x[is.na(x)] = 0; x})
+similSimply2 = Reduce('+', similSimply2)
+similSimply = similSimply1 + similSimply2
+noData1 = lapply(betweenIndividuals, function(x){ x[!is.na(x)] = 0; x[is.na(x)] = 1; x})
+noData1 = Reduce('+', noData1)
+noData2 = lapply(betweenIndividuals2, function(x){ x[!is.na(x)] = 0; x[is.na(x)] = 1; x})
+noData2 = Reduce('+', noData2)
+noData = (noData1 + noData2 - 179)*-1
+
+similSimply = similSimply/noData
+
+mean(similSimply, na.rm = TRUE)
+max(similSimply, na.rm = TRUE)
+
+similSimply[is.na(similSimply)] = 0
+similSimply = similSimply + t(similSimply)
 
 
-mean(as.matrix(betweenIndividuals[, -c(1,2)]), na.rm = T)
+#[similSimply <0.45]= 0
 
-ggplot(data = betweenIndividuals[, c(1,2,4)], aes(x = V1, y = V2))+
-  geom_tile(aes(fill = as.numeric(`2019-11-12`)), colour = "white") +
-  scale_fill_gradient(low = "white", high = "red")
-
-betweenIndividuals[, pair := paste(V1, "-", V2)]
-betweenIndividualsL = melt(betweenIndividuals,                          # Reshape data from wide to long format
-                              id.vars     = c("pair", "V1", "V2"),
-                           variable.name = "Date", 
-                           value.name = "Similarity")
-betweenIndividualsL[, Date := as_date(Date)]
-
-
-ggplot(data = betweenIndividualsL[V1 == "Hen_108",], aes(x = Date, y = Similarity))+
-  geom_line(aes(group = pair))
-
-agrBetween = betweenIndividualsL[, .(Mean = mean(Similarity, na.rm = T), 
-                                     SD = sd(Similarity, na.rm = T)), by = .(pair, V1, V2)]
-ggplot(data = agrBetween, aes(x = V1, y = V2))+
-  geom_tile(aes(fill = Mean), colour = "white") +
-  scale_fill_gradient(low = "white", high = "red")
-
-
-#Assortativity coefficients close to 1 indicate that there is very high 
-#likelihood of two vertices with the same property being connected.
-assort = data.table(Date = as_date(colnames(betweenIndividuals)[-c(1,2, .N)]))
-assort[, Assort := 0]
-# high degree assortativity is a measure of preferential attachment in organizations, 
-# where highly connected vertices are connected with each other and a large number 
-# of vertices with low degree make up the remainder of the network.
-assort[, Degree := 0]
-dailySimil = vector(mode='list', length= length(colnames(betweenIndividuals)[-c(1,2, .N)]))
-i = 1
-for(day in colnames(betweenIndividuals)[-c(1,2, .N)]){
-  cat(day)
-  dailySimil[[i]] = as.matrix(rbind(cbind(data.table(Hen_108 = rep(NA, 34)), 
-                                  dcast(betweenIndividuals[,.SD, .SDcols = c("V1", "V2", (day))], V1 ~ V2)[,-1]),
-                            data.table(Hen_108 = NA), fill = T))
-  rownames(dailySimil[[i]]) = colnames(dailySimil[[i]])
-  simMatrix = dailySimil[[i]]
-  simMatrix = simMatrix *10
-  #maybe set threshold smarter by checking 
-  simMatrix[simMatrix < 3.5] = 0
-  g  <- graph.adjacency(simMatrix,mode = "undirected", weighted = T, diag = F)
-  #add network node attribute
-  V(g)$domIndex <- socialData$Ratio[match(V(g)$name, paste0("Hen_",as.character(socialData$HenID)))]
-  assort[Date == (day), Assort := assortativity(g, V(g)$domIndex)]
-  assort[Date == (day), Degree := assortativity_degree(g)]
-  i = i+1
-}
-
-similSimply = lapply(dailySimil, function(x){ x[x < 0.6] = 0; x[(x > 0.6)|(x == 0.6)] = 1; x})
-
-similSimply = Reduce('+', similSimply)
-g  <- graph.adjacency(similSimply,mode = "undirected", diag = F)
+g  <- graph.adjacency(similSimply,mode = "undirected", weighted = TRUE, diag = F)
 bc <- edge.betweenness.community(g)
 #par(mfrow=c(1,2))
 plot(as.dendrogram(bc))
@@ -710,9 +717,97 @@ V(g)$name
 edge_attr(g)
 vertex_attr(g)
 V(g)$domIndex <- socialData$Ratio[match(V(g)$name, paste0("Hen_",as.character(socialData$HenID)))]
+V(g)$Pen <- socialData$Pen[match(V(g)$name, paste0("Hen_",as.character(socialData$HenID)))]
 plot(g, edge.arrow.size=.5, vertex.label.color="black", vertex.label.dist=1.5,
      vertex.color=c( "pink", "skyblue")[1+(V(g)$domIndex>0.5)] ) 
-assortativity(g, V(g)$domIndex)
+assortativity(g, V(g)$domIndex, types1 = graph.strength(g))
+E(g)$width <- E(g)$weight*3
+plot(g, edge.arrow.size=.5, vertex.label.color="black", vertex.label.dist=1.5,
+     vertex.color=V(g)$Pen) 
+assortativity(g, V(g)$Pen)
+library(assortnet)
+assortment.continuous(similSimply, V(g)$domIndex, weighted = TRUE, SE = FALSE, M = 1)
+
+#old first tests
+# mean(as.matrix(betweenIndividuals[, -c(1,2)]), na.rm = T)
+# 
+# ggplot(data = betweenIndividuals[, c(1,2,4)], aes(x = V1, y = V2))+
+#   geom_tile(aes(fill = as.numeric(`2019-11-12`)), colour = "white") +
+#   scale_fill_gradient(low = "white", high = "red")
+# 
+# betweenIndividuals[, pair := paste(V1, "-", V2)]
+# betweenIndividualsL = melt(betweenIndividuals,                          # Reshape data from wide to long format
+#                               id.vars     = c("pair", "V1", "V2"),
+#                            variable.name = "Date", 
+#                            value.name = "Similarity")
+# betweenIndividualsL[, Date := as_date(Date)]
+# 
+# 
+# ggplot(data = betweenIndividualsL[V1 == "Hen_108",], aes(x = Date, y = Similarity))+
+#   geom_line(aes(group = pair))
+# 
+# agrBetween = betweenIndividualsL[, .(Mean = mean(Similarity, na.rm = T), 
+#                                      SD = sd(Similarity, na.rm = T)), by = .(pair, V1, V2)]
+# ggplot(data = agrBetween, aes(x = V1, y = V2))+
+#   geom_tile(aes(fill = Mean), colour = "white") +
+#   scale_fill_gradient(low = "white", high = "red")
+# 
+# 
+# #Assortativity coefficients close to 1 indicate that there is very high 
+# #likelihood of two vertices with the same property being connected.
+# assort = data.table(Date = as_date(colnames(betweenIndividuals)[-c(1,2, .N)]))
+# assort[, Assort := 0]
+# # high degree assortativity is a measure of preferential attachment in organizations, 
+# # where highly connected vertices are connected with each other and a large number 
+# # of vertices with low degree make up the remainder of the network.
+# assort[, Degree := 0]
+# dailySimil = vector(mode='list', length= length(colnames(betweenIndividuals)[-c(1,2, .N)]))
+# i = 1
+# for(day in colnames(betweenIndividuals)[-c(1,2, .N)]){
+#   cat(day)
+#   dailySimil[[i]] = as.matrix(rbind(cbind(data.table(Hen_108 = rep(NA, 34)), 
+#                                   dcast(betweenIndividuals[,.SD, .SDcols = c("V1", "V2", (day))], V1 ~ V2)[,-1]),
+#                             data.table(Hen_108 = NA), fill = T))
+#   rownames(dailySimil[[i]]) = colnames(dailySimil[[i]])
+#   simMatrix = dailySimil[[i]]
+#   simMatrix = simMatrix *10
+#   #maybe set threshold smarter by checking 
+#   simMatrix[simMatrix < 3.5] = 0
+#   g  <- graph.adjacency(simMatrix,mode = "undirected", weighted = T, diag = F)
+#   #add network node attribute
+#   V(g)$domIndex <- socialData$Ratio[match(V(g)$name, paste0("Hen_",as.character(socialData$HenID)))]
+#   assort[Date == (day), Assort := assortativity(g, V(g)$domIndex)]
+#   assort[Date == (day), Degree := assortativity_degree(g)]
+#   i = i+1
+# }
+# 
+# similSimply = lapply(dailySimil, function(x){ x[x < 0.6] = 0; x[(x > 0.6)|(x == 0.6)] = 1; x})
+# 
+# similSimply = Reduce('+', similSimply)
+# g  <- graph.adjacency(similSimply,mode = "undirected", diag = F)
+# bc <- edge.betweenness.community(g)
+# #par(mfrow=c(1,2))
+# plot(as.dendrogram(bc))
+# #network vertex names
+# V(g)$name
+# #inspect network edge and node attributes
+# edge_attr(g)
+# vertex_attr(g)
+# V(g)$domIndex <- socialData$Ratio[match(V(g)$name, paste0("Hen_",as.character(socialData$HenID)))]
+# plot(g, edge.arrow.size=.5, vertex.label.color="black", vertex.label.dist=1.5,
+#      vertex.color=c( "pink", "skyblue")[1+(V(g)$domIndex>0.5)] ) 
+# assortativity(g, V(g)$domIndex)
+
+
+#reformat lists into datatables containing cols of HenID1, HenID2, Date, Similarity
+sample = lapply(betweenIndividuals, function(x){as.data.table(as.table(x))})
+sample = rbindlist(lapply(sample, function(x){x[, Date := rep(names(x), .N)]; return(x)}))
+colnames(sample) = c("Hen1", "Hen2", "Similarity")
+nPairs = length(unique(paste(sample$Hen1,sample$Hen2)))
+sample[, Date := as.IDate(rep(names(betweenIndividuals), each = nPairs))]
+sample[,all(is.na(Similarity)), by = Date]
+
+
 
 ### Isolate by Nestbox behaviour
 
@@ -766,16 +861,125 @@ assortativity(g, V(g)$domIndex)
 ###### Within individuals ####
 
 withinIndividuals = similarityWithin(trackingFull)
-withinIndividualsL = melt(withinIndividuals,                          # Reshape data from wide to long format
+# Reshape data from wide to long format
+withinIndividualsL = melt(withinIndividuals,  
                            id.vars     = c("Date"),
                            variable.name = "Hen", 
                            value.name = "Similarity")
 withinIndividualsL[, HenID := as.numeric(unlist(regmatches(Hen, gregexpr('\\(?[0-9,.]+', Hen))))]
 withinIndividualsL = withinIndividualsL[socialData[,c(1,4,13)], on = "HenID"]
+#include Week of age
+withinIndividualsL= withinIndividualsL[tableWoA, on = "Date", nomatch = NULL]
+withinIndividualsL[, Highlight := "Any"]
+withinIndividualsL[HenID == 82 | HenID == 97 | HenID == 33, Highlight := "Dom"]
+withinIndividualsL[HenID == 77 | HenID == 5 | HenID == 108, Highlight := "Sub"]
 
 
-ggplot(data = na.omit(withinIndividualsL), aes(x = Date, y = Similarity))+
-  geom_line(aes(group = Hen, colour = Ratio))
+ggplot(data = na.omit(withinIndividualsL)[Highlight != "Any",], aes(x = Date, y = Similarity, colour = Hen))+
+  geom_line(aes(group = Hen))
+ggplot(data = na.omit(withinIndividualsL), aes(x = Date, y = Similarity, colour = Ratio))+
+  geom_line(aes(group = Hen))
+
+#test model
+hist(withinIndividualsL$Similarity)
+dataWithin = na.omit(withinIndividualsL)
+dataWithin[, NonSimilar := 1-Similarity]
+dataWithin[, RatioSplit := "Dom"]
+dataWithin[Ratio < 0.5, RatioSplit := "Sub"]
+
+model.Within = lmer(Similarity ~ Ratio*WoA + (1|Pen/HenID), data = dataWithin)
+#model.Within = lmer(Similarity ~ Ratio + (WoA|HenID), data = dataWithin)
+resid.Within = simulateResiduals(model.Within, 1000)
+plot(resid.Within)
+plotResiduals(resid.Within, form = dataWithin$Ratio)
+plotResiduals(resid.Within, form = dataWithin$WoA)
+summary(model.Within)
+parameters(model.Within)
+plot(allEffects(model.Within))
+
+dataWithin[, PredictWithin := predict(model.Within)]
+
+ggplot(dataWithin, aes(x = Date, y = Similarity, color = RatioSplit)) +
+  geom_jitter(size=2) + 
+  geom_line(data = dataWithin[, mean(PredictWithin), by = .(Date, RatioSplit)], 
+            aes(x = Date, y =V1, colour = RatioSplit),size=1.5) + 
+  theme_classic(base_size = 18)+ 
+  ylab("daily within-individual similarity")#+ 
+
+#plot individual variation
+ggplot(data = dataWithin, aes(x = WoA, y = PredictWithin)) + 
+  geom_line(aes(group = HenID, color = RatioSplit), size=1)+
+  #geom_line(data = dataWithin[Highlight != "Any",], aes(group = HenID, colour = as.factor(HenID)), size=2)+
+  labs(y = "daily within-individual similarity")+ 
+  theme_classic(base_size = 18)
+
+#plot against actual data of some examples
+ggplot(data = dataWithin[Highlight != "Any",], 
+       aes(x = WoA, colour = RatioSplit)) + 
+  geom_jitter(aes(y = Similarity))+
+  geom_line(aes(y = PredictWithin, group = HenID), size=1)+
+  labs(y = "daily within-individual similarity",color = "Hen ID")+ 
+  theme_classic(base_size = 18)+ 
+  guides(color = guide_legend(nrow = 4))
+ggplot(data = dataWithin[Highlight != "Any",], 
+       aes(x = WoA, colour = Hen)) + 
+  geom_jitter(aes(y = Similarity))+
+  geom_line(aes(y = PredictWithin, group = HenID), size=1)+
+  labs(y = "daily within-individual similarity",color = "Hen ID")+ 
+  theme_classic(base_size = 18)+ 
+  guides(color = guide_legend(nrow = 4))
+
+
+#divide the variance explained by animal_id by the total phenotypic variance 
+#(animal_id + month:year + year + residual variance)
+print(VarCorr(model.Within), comp = c("Variance", "Std.Dev."))
+VarCorr(model.Within)$"HenID:Pen"[1] / (VarCorr(model.Within)$"HenID:Pen"[1] + 
+                                          VarCorr(model.Within)$"Pen"[1] + 
+                                          attr(VarCorr(model.Within), "sc")^2)
+#-> within -individual repeatability of 0.3 (within a pen)
+
+#to get uncertainity estimate: simulate model 1000 times
+set.seed(1) 
+library(arm)
+simulated <- sim(model.Within, n.sim = 1000)
+posterior_HenID <- apply(simulated@ranef$"HenID:Pen"[ , , 1],1,var) 
+posterior_Pen <- apply(simulated@ranef$"Pen"[ , , 1],1,var) 
+posterior_residual <- simulated@sigma^2
+quantile(posterior_HenID / (posterior_HenID + posterior_Pen + posterior_residual), prob=c(0.025, 0.5, 0.975))
+
+#coeffeicient of variation for beteween individual variance
+CVi <- sqrt(posterior_HenID) / summary(model.Within)$coefficients[1] 
+quantile(CVi,prob=c(0.025, 0.5, 0.975))
+
+#behavioural type
+#the behavioral type is the best linear unbiased prediction (BLUP) of the 
+#random effect, i.e. the prediction for mean behavioral expression for each individual.
+library(merTools)
+randomSims <- as.data.table(REsim(model.Within, n.sims = 1000)) 
+head(randomSims[randomSims$groupFctr=="HenID:Pen",])
+# add the dominance ratio of the individual 
+randomSims[, HenID := as.numeric(unlist(strsplit(groupID,':'))[2*(1:dim(randomSims)[1])-1])] 
+randomSims <- merge(randomSims[randomSims$groupFctr=="HenID:Pen",], 
+                    dataWithin[!duplicated(HenID),c("HenID","Ratio", "Pen", "RatioSplit")])
+# add identifier to color individuals uniquely 
+randomSims[, ID := ifelse(HenID %in% c(77, 5, 108, 82, 97, 33), as.character(HenID), "Other individuals")]
+
+#add population intercept for easier interpretation on transition scale
+randomSims[, meanSimil := mean + fixef(model.Within)["(Intercept)"]]
+
+# order by transitions
+randomSims = randomSims[order(meanSimil),]
+randomSims[,HenID := factor(HenID, levels = as.character(HenID))]
+
+#plot
+ggplot(data = randomSims, aes(x = as.factor(HenID), y = meanSimil))+
+  geom_errorbar(aes(ymin = meanSimil-sd, ymax = meanSimil+sd, color = RatioSplit), size = 2)+
+  geom_point(aes(fill = ID), shape = 21, size = 5)+
+  theme_classic(base_size = 18)+
+  scale_fill_manual(values = c("red","blue","orange","yellow", "lightblue","white", "gray"))+
+  scale_color_manual(values = c("grey", "black"))
+
+
 
 ##### Parameters ########
 

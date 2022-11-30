@@ -300,22 +300,28 @@ similarityBetween = function(data, zone = F, interval = "day"){
 #calculates similarity of movement sequences within individuals
 # input: trackingdata
 # output: data.table with similarity for consecutive measure days for each hen
-#TODO: how long (over days) still higher within compared to between
+#TODO: so far cannot compare days that are non-consecutive
+#idea: maybe fill all days until they include all times starting at 2? 
 
-similarityWithin = function(data){
+similarityWithin = function(data, interval = "day"){
   cat("Calculating similarity of movement within individuals between days \n")
   splitHen = splitHenData(data)
   fullDate = vector(mode='list', length= length(unique(data$Date)))
   allDates = data.table(Date = unique(data$Date))
   cat("To do for", length(splitHen), "individuals and", dim(allDates)[1], "days. \n")
   for (i in 1:length(splitHen)){
+    
     fullHen = mergeHenData(fillSeqHenData(splitHen[[i]]))
     fullHen[, dupl := duplicated(Time)]
     fullHen = fullHen[dupl == F,]
-    entry = fullHen[ , ZoneComp := Zone == Zone[match(shift(Time, n = 24*3600), Time)]][
-      , (sum(ZoneComp == T)/(sum(ZoneComp == T)+ sum(ZoneComp == F))), by = .(Date = as.Date(Time))]
+    if(interval == "day"){
+      fullHen = fullHen[Light == T,]
+    }
+    
+    entry = fullHen[ , ZoneComp := Zone == Zone[match(Time - 24*3600, Time)]][
+      , (sum(ZoneComp == T, na.rm = TRUE)/(sum(ZoneComp == T, na.rm = TRUE)+ sum(ZoneComp == F, na.rm = TRUE))), by = .(Date = as.Date(Time))]
     names(entry)[2] = unique(fullHen$Hen)
-    allDates = cbind(allDates, entry[,2])
+    allDates = entry[allDates, on = "Date"]
   cat("Done for", i, "individuals. \n")
   }
   return(allDates)
