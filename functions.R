@@ -326,3 +326,12 @@ similarityWithin = function(data, interval = "day"){
   }
   return(allDates)
 }
+
+
+#create randomised transition sequences
+
+#1. only shuffle within day within individual
+#2. only shuffle within time span of pophole open/closed
+#3. control for unlikely transitions
+#4. change also timepoint of transition?
+#5. what if bird stays on the same zone 

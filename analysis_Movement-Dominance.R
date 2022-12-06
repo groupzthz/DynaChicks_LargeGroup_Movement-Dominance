@@ -12,6 +12,7 @@ library(effects)
 library(hms)
 library(parameters)
 library(igraph)
+library(emmeans)
 
 #load functions
 source("functions.R")
@@ -28,25 +29,32 @@ combData[, Date := as_date(Date, format = "%d.%m.%Y")]
 combData = combData[Date < as_date("2020-01-01")]
 combData = combData[, .SD, .SDcols = c("Pen", "ID", "Date", "HenID", "TagID", "Mean5_7")]
 colnames(combData)[6] <- "Comb" 
+
+#prepare WoA table 
+tableWoA = data.table(Date = seq(ymd("2019-10-11"), ymd("2020-07-02"), by = "day"),
+                      WoA = rep(18:55, each = 7))
 #load health data
 healthData = fread('HA_all.csv')
 healthData[,ID := paste0(pen,backpack)]
-healthData = healthData[(date == "09.12.2019" | date == "29.06.2020" | date == "30.06.2020")
-                        & ID %in% unique(observData$ID),]
+#healthData = healthData[(date == "28.10.2019"| date == "09.12.2019" | date == "29.06.2020" | date == "30.06.2020")
+#                        & ID %in% unique(observData$ID),]
+healthData = healthData[ID %in% unique(observData$ID),]
 healthData[, feathers := neck + wings +tail + cloaca+ breast]
 healthData[, footproblems:= r_podo + r_bumble +r_injure + l_podo + l_bumble + l_injure]
-healthData[, WoA := ifelse(date == "09.12.2019", 26, 55)]
+healthData[, date := as_date(date, format = "%d.%m.%Y")]
+healthData = healthData[tableWoA, on = c(date = "Date"), nomatch = NULL]
 healthDataWide = dcast(healthData, formula = ID ~ WoA, value.var = list("weight", "feathers", "wounds","comb", "bare_head", "footproblems"))
 
 KBF = fread("KBF_scores.csv")
-KBF = KBF[(Date == "09.12.2019" | Date == "29.06.2020" | Date == "30.06.2020")
-                        & HenID %in% unique(observData$ID),]
-KBF[, WoA := ifelse(Date == "09.12.2019", 26, 55)]
+#KBF = KBF[(Date == "28.10.2019" |Date == "09.12.2019" | Date == "29.06.2020" | Date == "30.06.2020")
+#                        & HenID %in% unique(observData$ID),]
+KBF = KBF[HenID %in% unique(observData$ID),]
+KBF[, Date := as_date(Date, format = "%d.%m.%Y")]
+KBF = KBF[tableWoA, on = "Date", nomatch = NULL]
 KBFWide = dcast(KBF, formula = HenID ~ WoA, value.var = "Severity")
-colnames(KBFWide)[colnames(KBFWide) == "26"] = "KBF_26"
-colnames(KBFWide)[colnames(KBFWide) == "55"] = "KBF_55"
+colnames(KBFWide)[2:length(colnames(KBFWide))] = paste("KBF", colnames(KBFWide)[2:length(colnames(KBFWide))], sep = "_")
 
-healthData = KBF[, .(WoA, HenID, Severity)][healthData[, .(WoA, ID, WoA, weight, feathers, wounds, comb, bare_head, footproblems)], on = c(HenID = "ID",WoA = "WoA")]
+healthData = KBF[, .(WoA, HenID, Severity)][healthData[, .(WoA, ID, weight, feathers, wounds, comb, bare_head, footproblems)], on = c(HenID = "ID",WoA = "WoA")]
 healthDataWide = KBFWide[healthDataWide, on = c(HenID = "ID")]
 
 #delete invalid rows
@@ -115,6 +123,7 @@ dataIndex[, Ratio := Dom/(Dom+Sub)]
 dataIndex = dataIndex[order(Ratio),]
 
 socialData = combData[dataIndex, on = "ID"]
+socialData[, Hen := paste0("Hen_", HenID)]
 
 ggplot(data = socialData, aes(x = ID, y = Ratio, colour = as.factor(Pen)))+ 
   geom_point(size = 6)+
@@ -140,7 +149,7 @@ ggplot(data = henData, aes(x = Comb, y = Ratio))+
   labs(title = 'Visual signalling', x = 'Comb Size', y = "Dominance ratio")
 
 #weight at 26 by dominance
-ggplot(data = henData, aes(x = weight_26, y = Ratio))+ 
+ggplot(data = henData, aes(x = weight_20, y = Ratio))+ 
   # geom_violin()+
   geom_point(size = 3)+
   geom_point(aes(x = weight_55), size = 3, colour = "grey")+
@@ -159,12 +168,16 @@ ggplot(data = henData, aes(x = Comb, y = weight_55))+
   theme_classic(base_size = 18)+
   labs(title = 'Visual signalling', x = 'Comb Size', y = "Weight")
 
+cor.test(henData$Comb, henData$weight_20)
+# correlated -> R = 0.4, p = 0.015
 cor.test(henData$Comb, henData$weight_26)
-# correlated -> R = 0.56, p <0.001
+# correlated -> R = 0.55, p <0.001
 cor.test(henData$Comb, henData$weight_55)
 # correlated -> R = 0.54, p <0.001
+cor.test(henData$weight_55, henData$weight_20)
+# correlated -> R = 0.5, p = 0.001
 cor.test(henData$weight_55, henData$weight_26)
-# correlated -> R = 0.82, p <0.001
+# correlated -> R = 0.82, p < 0.001
 
 model.Comb = lmer(Ratio ~ Comb +(1|Pen), data = henData)
 null.Comb =  lmer(Ratio ~ 1 +(1|Pen), data = henData)
@@ -184,8 +197,6 @@ ggplot(data = henData, aes(y = Ratio, x = Comb, ))+
 
 ###### Weight gain by dominance ####
 
-#TODO: check out gain ab 20WoA
-
 
 #weight gain
 ggplot(data = henDataLong, aes(x = as.factor(WoA), y = weight))+ 
@@ -195,7 +206,7 @@ ggplot(data = henDataLong, aes(x = as.factor(WoA), y = weight))+
   theme_classic(base_size = 18)+
   labs(title = 'Visual signalling', x = 'WoA', y = "Weight")
 
-henData[, gain := weight_55-weight_26]
+henData[, gain := weight_55-weight_20]
 
 #gain by dominance
 ggplot(data = henData, aes(y = gain, x = Ratio))+ 
@@ -207,21 +218,48 @@ ggplot(data = henData, aes(y = gain, x = Ratio))+
   labs(title = 'weight gain', y = 'Weight gain', x = "Dominance ratio")
 
 
-model.Gain = lmer(gain ~ Ratio +(1|Pen), data = henData)
-null.Gain =  lmer(gain ~ 1 +(1|Pen), data = henData)
-resid.Gain = simulateResiduals(model.Gain, 1000)
-plot(resid.Gain)
-plotResiduals(resid.Gain, form = henData$Ratio)
-summary(model.Gain)
-anova(model.Gain, null.Gain)
-parameters(model.Gain)
+# model.Gain = lmer(gain ~ Ratio +(1|Pen), data = henData)
+# null.Gain =  lmer(gain ~ 1 +(1|Pen), data = henData)
+# resid.Gain = simulateResiduals(model.Gain, 1000)
+# plot(resid.Gain)
+# plotResiduals(resid.Gain, form = henData$Ratio)
+# summary(model.Gain)
+# anova(model.Gain, null.Gain)
+# parameters(model.Gain)
+# 
+# henData[, PredictGain:= predict(model.Gain)]
+# ggplot(data = henData, aes(x = Ratio, y = gain, ))+ 
+#   geom_point(aes(colour = as.factor(Pen)), size = 3)+
+#   geom_line(aes(y = PredictGain, colour = as.factor(Pen)), size = 1)+
+#   #facet_grid(.~Pen)+
+#   theme_classic(base_size = 18)
 
-henData[, PredictGain:= predict(model.Gain)]
-ggplot(data = henData, aes(x = Ratio, y = gain, ))+ 
-  geom_point(aes(colour = as.factor(Pen)), size = 3)+
-  geom_line(aes(y = PredictGain, colour = as.factor(Pen)), size = 1)+
+#TODO: take out second order interaction
+model.Weight = lmer(weight ~ poly(WoA, 2)+ WoA:Ratio + Ratio +(1|Pen), data = henDataLong)
+null.Weight =  lmer(weight ~ 1 +(1|Pen), data = henDataLong)
+resid.Weight = simulateResiduals(model.Weight, 1000)
+plot(resid.Weight)
+plotResiduals(resid.Weight, form = henDataLong$Ratio)
+plotResiduals(resid.Weight, form = henDataLong$WoA)
+summary(model.Weight)
+anova(model.Weight, null.Weight)
+parameters(model.Weight)
+plot(allEffects(model.Weight))
+
+library(emmeans)
+plotData = as.data.table(emmeans(model.Weight, ~ pairwise ~ WoA*Ratio, at =  list(Ratio = quantile(henDataLong$Ratio),
+                                                         WoA = c(20, 26, 30, 35, 40, 47, 51, 55)))$emmeans)
+
+henDataLong[, PredictWeight:= predict(model.Weight)]
+henDataLong[, RatioSplit := ifelse(Ratio >0.5,"Dom" , "Sub")]
+
+ggplot()+ 
+  geom_point(data = henDataLong, aes(x = WoA, y = weight), size = 3)+
+  geom_line(data = plotData, aes(x = WoA, y = emmean, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
+  geom_ribbon(data = plotData, aes(x = WoA, ymin = lower.CL, ymax = upper.CL, group = Ratio), alpha = 0.1)+
   #facet_grid(.~Pen)+
   theme_classic(base_size = 18)
+
 
 
 ###### Health & social data ####
@@ -245,15 +283,19 @@ ggplot(data = henDataLong, aes(x = as.factor(WoA), y = Severity))+
   labs(x = 'WoA', y = "KBF Severity")
 #two lowest ranking hens with really low severity -> not laying???
 
-model.KBF = lmer(KBF_55 ~ Ratio +(1|Pen), data = henData)
-model.KBF = lm(KBF_55 ~ Ratio, data = henData)
-null.KBF =  lm(KBF_55 ~ 1, data = henData)
+model.KBF = lmer(Severity ~ Ratio*WoA +(1|Pen), data = henDataLong)
+null.KBF =  lmer(Severity ~ 1 +(1|Pen), data = henDataLong)
 resid.KBF = simulateResiduals(model.KBF, 1000)
 plot(resid.KBF)
-plotResiduals(resid.KBF, form = henData$Ratio)
+testZeroInflation(resid.KBF) 
+#zero-inflation problem:
+#tested by running model without 20 WoA and 26 WoA -> estimates do not change   
+plotResiduals(resid.KBF, form = henDataLong$Ratio)
+plotResiduals(resid.KBF, form = henDataLong$WoA)
 summary(model.KBF)
 anova(model.KBF, null.KBF)
 parameters(model.KBF)
+
 
 #feather cover
 ggplot(data = henData, aes(y = feathers_55, x = Ratio, colour = Pen))+ 
@@ -273,18 +315,20 @@ ggplot(data = henDataLong, aes(x = as.factor(WoA), y = feathers))+
   theme_classic(base_size = 18)+
   labs(title = 'Visual signalling', x = 'WoA', y = "Feather loss")
 
-model.Feathers = lmer(feathers_55 ~ Ratio +(1|Pen), data = henData)
-null.Feathers =  lmer(feathers_55 ~ 1 +(1|Pen), data = henData)
+model.Feathers = glmer.nb(feathers ~ Ratio + Ratio:WoA+ poly(WoA,2) +(1|Pen), data = henDataLong) 
+null.Feathers =  glmer.nb(feathers ~ 1 +(1|Pen), data = henDataLong)
 resid.Feathers = simulateResiduals(model.Feathers, 1000)
 plot(resid.Feathers)
-plotResiduals(resid.Feathers, form = henData$Ratio)
+plotResiduals(resid.Feathers, form = henDataLong$Ratio)
+plotResiduals(resid.Feathers, form = henDataLong$WoA)
 summary(model.Feathers)
 anova(model.Feathers, null.Feathers)
-parameters(model.Feathers)
+parameters(model.Feathers) 
+plot(allEffects(model.Feathers))
 
 
 #foot problems
-ggplot(data = henData, aes(y = footproblems_55, x = Ratio))+ 
+ggplot(data = henDataLong, aes(x = as.factor(WoA), y = footproblems))+ 
   # geom_violin()+
   geom_point(size = 6)+
   geom_vline(xintercept= 0.5, linetype='dashed')+
@@ -342,302 +386,13 @@ ggplot(data = henData, aes(y = Affil_rec, x = Ratio))+
   theme_classic(base_size = 18)
 
 ##### Tracking data ####
-###### Extraction tracking data #########
-
-#add numerical hen identifier to tracking data
-trackingData[, HenID := unlist(regmatches(Hen, gregexpr('\\(?[0-9,.]+', Hen)))]
-trackingData[, HenID := as.numeric(HenID)]
-trackingData[, Time := ymd_hms(Time)]
 
 #relevant hens
 hens = sort(unique(socialData$HenID))
 
-#splitting data into Hens
-splitHen = splitHenData(trackingData)
-
-hen_list <- vector(mode='list', length=length(hens))
-start = ymd_hms("2019-11-09 00:00:00")
-end = ymd_hms("2020-06-28 23:59:59")
-i = 1
-for (hen in hens) {
-    hen_list[[i]] = extractInterval(splitHen[[hen]], start, end)
-    i = i+1
-} 
-trackingRel = mergeHenData(hen_list)
-#add Pen
-trackingRel[, Pen := as.numeric((unlist(regmatches(PackID, gregexpr('\\(?[0-9,.]+', PackID)))))]
-#add date grouping
-trackingRel[, Date:= as_date(Time)]
-#fwrite(trackingRel, file = "relTrackingData.csv", sep = ";")
-rm(trackingData)
-
-###### data checks #############################
-
-#TODO: make sure exclusion of days/data does not lead to wrong entries when adding 
-# beginning and end of day later
-
-#there is data for every day?
-allDays = seq(ymd("2019-11-09"), to = ymd("2020-06-28"), by = "day")
-length(unique(trackingRel$Date)) == length(allDays)
-#which days are missing?
-allDays[which(!(allDays %in% unique(trackingRel$Date)))]
-#missing days:
-#"2019-12-05" "2019-12-22" "2019-12-27" "2019-12-28" "2019-12-29" "2019-12-30" 
-#"2019-12-31" "2020-01-01" "2020-01-02" "2020-01-03" "2020-01-04" "2020-05-19" "2020-05-24"
-
-#days to exclude
-excl = c(ymd("2019-12-09"), ymd("2020-01-06"), ymd("2020-02-10"),
-         ymd("2020-03-16"), ymd("2020-05-04"), ymd("2020-06-02"), #health assessments
-         ymd("2019-12-04"), ymd("2019-12-06"), ymd("2019-12-21"),
-         ymd("2019-12-26"), ymd("2020-01-12"), ymd("2020-01-20"), ymd("2020-06-20"), #missing data
-         seq(ymd("2020-01-21"), to = ymd("2020-02-03"), by = "day"), #different configuration
-         seq(ymd("2020-05-17"), to = ymd("2020-05-26"), by = "day"), # experimental light change
-         ymd("2020-01-07"),ymd("2020-02-25"),ymd("2020-03-11") #other disturbances
-         )
-
-trackingRel = trackingRel[!(Date %in% excl),]
-
-length(unique(trackingRel$Date)) #-> now we have 179 days in total of data
-
-#do all individuals have data?
-length(unique(trackingRel$HenID)) == 36
-#all individuals have data every day?
-entriesPerDay = trackingRel[, length(unique(Date)), by = HenID][V1 != 179,][, miss := 179-V1]
-entriesPerDay
-
-#which days are missing for those hens?
-days = unique(trackingRel$Date)
-
-trackingRel[HenID == 1, days[which(!(days %in% Date))]] #42 days miss, no data between the 22.11. - 26.12. + 05.01. + 09.- 20.01.
-trackingRel[HenID == 17, days[which(!(days %in% Date))]] # 2 days miss, no data on the 23.12. & 05.01.
-trackingRel[HenID == 33, days[which(!(days %in% Date))]] # 1 day miss, no data on the 17.03.
-trackingRel[HenID == 35, days[which(!(days %in% Date))]] # 1 day miss, no data on the 23.12.
-trackingRel[HenID == 39, days[which(!(days %in% Date))]] # 1 day miss, no data on the 05.01.
-trackingRel[HenID == 65,days[which(!(days %in% Date))]] #8 day miss, no data between 2.12. - 08.12. + 23.12. - 26.12.
-trackingRel[HenID == 84,days[which(!(days %in% Date))]] #2 days miss, no data between 07.12. and 08.12.
-
-
-#exclude identified problem days
-trackingRel = trackingRel[!(Date == as.Date("2020-01-05")|
-                              Date == as.Date("2019-12-23")),]
-entriesPerDay = trackingRel[, length(unique(Date)), by = HenID][V1 != 182,][, miss := 182-V1]
-length(unique(trackingRel$Date)) #-> now we have 172 days in total of data
-#TODO: what to do with hens with missing days? (especially HenID 1 (40 miss) & 65 (7 miss))
-
-###### time series plot examples #########################
-#relevant times
-times = list(ymd_hms(c("2019-11-12 03:30:00", "2019-11-12 17:30:00")),
-             ymd_hms(c("2019-11-21 03:30:00", "2019-11-21 17:30:00")),
-             ymd_hms(c("2019-11-30 02:30:00", "2019-11-30 17:30:00")),
-             ymd_hms(c("2019-12-08 02:30:00", "2019-12-08 17:30:00")),
-             ymd_hms(c("2019-12-20 02:30:00", "2019-12-20 17:30:00")))
-
-hen_list <- vector(mode='list', length=length(hens))
-j = 1
-for (hen in hens) {
-  hen_list[[j]] <- vector(mode='list', length=5)
-  for (i in 1:5){
-    hen_list[[j]][[i]] = extractInterval(splitHen[[hen]], times[[i]][1], times[[i]][2])
-  }
-  j= j+1
-} 
-
-
-#make overview plots per hen
-for (i in 1:length(hens)){
-  plotData = mergeHenData(hen_list[[i]])
-  plotData[, Date := as.factor(as_date(Time))]
-  plotData[, Time_x := as_hms(Time)]
-  plotData[, Zone := factor(Zone, levels= c("Wintergarten", "Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
-  ggplot(plotData, aes(x = Time_x, y = Zone)) + 
-    geom_step(group = 1) + 
-    geom_point() + 
-    facet_grid(Date~.)+
-    labs(x = "time", y = "Zones") +
-    ggtitle(hens[i])
-    #scale_x_discrete(labels = x_times) + 
-    #theme(axis.ticks = element_blank(), axis.text.y = element_text(size = 6))+
-    #scale_y_discrete(labels = c("WG", "1", "2", "3", "4"))
-  
-  ggsave(filename = paste0(hens[i],".png"), plot = last_plot(), 
-         width = 18, height = 20, dpi = 300, units = "cm")
-}
-
-plotData = trackingFull
-plotData[, Date := as.factor(Date)]
-plotData[, Time_x := as_hms(Time)]
-plotData[, Zone := factor(Zone, levels= c("Wintergarten", "Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
-
-# #ideas for plots: for each individual an average step function plot
-# #requires: full sequence for every day
-# 
-# splitHen = splitHenData(trackingFull)
-# hens = unique(trackingFull$HenID)
-# average_hen <- vector(mode='list', length=length(hens))
-# i = 1
-# for (i in 1:length(hens)) {
-#   cat("Hen", i)
-#   list = fillSeqHenData(splitHen[[i]])
-#   #cat("done")
-#   average_hen[[i]] = averageDailyZone(list)
-# } 
-# 
-# 
-# #make overview plots per hen
-# for (i in 1:length(hens)){
-#   plotData = average_hen[[i]]
-#   plotData[, Zone := factor(Zone, levels= c("Wintergarten", "Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
-#   ggplot(plotData, aes(x = Time, y = Zone)) + 
-#     geom_step(group = 1) + 
-#     geom_point() + 
-#     labs(x = "time", y = "Zones") +
-#     ggtitle(hens[i])+
-#     theme_bw(base_size = 18)
-#   
-#   
-#   ggsave(filename = paste0(hens[i],".png"), plot = last_plot(), 
-#          width = 40, height = 18, dpi = 300, units = "cm")
-# }
-
-###### Data preparations ################
-
-#data cleaning step
-#remove Wintergarten entries outside time that Wintergarten can be open
-#delete all Wintergarten entries at night (not possible, tracking system errors)
-#TODO: maybe ab 17:00 nicht 16:45
-trackingRel = trackingRel[!(hour(Time) > 16 & minute(Time) > 45 & Zone == "Wintergarten"), ]
-#delete all Wintergarten entries before 9 in the morning (not possible, tracking system error)
-trackingRel = trackingRel[!(hour(Time) < 10 & Zone == "Wintergarten"), ]
-
-#add beginning and end of each day by looping through every hen and every day and adding the stamps
-# (from original data set (splitHen))
-hen_list <- vector(mode='list', length=length(unique(trackingRel$hens)))
-splitHen = splitHenData(trackingRel)
-hens = unique(trackingRel$HenID)
-days = as.character(unique(trackingRel$Date))
-j = 1
-for (hen in hens) {
-  hen_list[[j]] <- vector(mode='list', length=length(days))
-  i = 1
-  for (day in days){
-    start = ymd_hms(paste(day, "00:00:00"))
-    end = ymd_hms(paste(day, "23:59:59"))
-    hen_list[[j]][[i]] = extractInterval(splitHen[[j]], start, end)
-    i = i+1
-  }
-  hen_list[[j]] = mergeHenData(hen_list[[j]])
-  j= j+1
-} 
-trackingFull = mergeHenData(hen_list)
-
-#remove unnecessary data from workspace
-rm(splitHen, trackingRel)
-
-#make sure date is correct (now with inserting of end and start of day)
-trackingFull[, Date:= as_date(Time)]
-
+trackingData = prepareTrackingData(trackingData, hens)
 #include Week of age
-tableWoA = data.table(Date = seq(ymd("2019-10-11"), ymd("2020-07-02"), by = "day"),
-                      WoA = rep(18:55, each = 7))
-trackingFull = trackingFull[tableWoA, on = "Date", nomatch = NULL]
-
-# mark true transitions
-trackingFull[, TrueTransition := TRUE]
-trackingFull[, DayIndic := F]
-trackingFull[hour(Time) == 0 & minute(Time) == 0 & second(Time) == 0, TrueTransition := FALSE] 
-trackingFull[hour(Time) == 23 & minute(Time) == 59 & second(Time) == 59, TrueTransition := FALSE] 
-trackingFull[hour(Time) == 0 & minute(Time) == 0 & second(Time) == 0, DayIndic := TRUE] 
-trackingFull[hour(Time) == 23 & minute(Time) == 59 & second(Time) == 59, DayIndic := TRUE] 
-
-
-#include light-dark cycle
-#TODO: how did it work on the 29.03.2020?? (Zeitumstellung)
-trackingFull[, Light := TRUE]
-trackingFull[hour(Time) > 17, Light := FALSE]
-trackingFull[month(Time)== 11 & day(Time) < 15 & hour(Time) < 4, Light := FALSE]
-trackingFull[month(Time)== 11 & day(Time) < 22 & day(Time) > 14 & hour(Time) < 3, Light := FALSE]
-trackingFull[(month(Time)!= 11| (month(Time)== 11 & day(Time) > 21)) & hour(Time) < 2, Light := FALSE]
-
-#catching Wintergarten errors of inserting time stamps
-trackingFull[Light == F & Zone == "Wintergarten", Zone := "Litter"]
-
-#add beginning and end of the night
-#split series into hens
-hen_list = splitHenData(trackingFull)
-#create empty list
-full_list = vector(mode='list', length= length(hen_list))
-for (i in 1:length(unique(trackingFull$HenID))){
-  full_list[[i]] <- vector(mode='list', length=length(days))
-  
-  j = 1
-  for (day in days) {
-    relDat = hen_list[[i]][Date == day,]
-    
-    #to keep track if an entry already exists at lights on
-    start = F
-    if (nrow(relDat)){
-      if( month(day) == 11 & day(day) < 15){
-        if(any(hour(relDat$Time) == 4 & minute(relDat$Time) == 0 & second(relDat$Time) == 0)){
-          start = T
-        } else{
-          dayStart = "04:00:00"
-        }
-        
-      } else if (month(day)== 11 & day(day) < 22 & day(day) >14){
-        if(any(hour(relDat$Time) == 3 & minute(relDat$Time) == 0 & second(relDat$Time) == 0)){
-          start = T
-        } else{
-          dayStart = "03:00:00"
-        }
-      } else{
-        if(any(hour(relDat$Time) == 2 & minute(relDat$Time) == 0 & second(relDat$Time) == 0)){
-          start = T
-        } else{
-          dayStart = "02:00:00"
-        }
-      }
-      if(start == F){
-        #use first indication of lights as index
-        indexStart = which(relDat$Light == T)[1]
-        startEntry = relDat[indexStart-1,]
-        startEntry[, Time := ymd_hms(paste(day, dayStart))]
-        startEntry[, Light := T]
-        startEntry[, TrueTransition := F]
-        startEntry[, DayIndic := F]
-        relDat = insertRow(relDat, indexStart, startEntry)
-      }
-      if(!any(hour(relDat$Time) == 17 & minute(relDat$Time) == 0 & second(relDat$Time) == 0)){
-        dayEnd = "17:00:00"
-        #use last entry before lights out time
-        indexEnd = which(hour(relDat$Time) > 17)[1]
-        endEntry = relDat[indexEnd-1,]
-        endEntry[, Time := ymd_hms(paste(day, dayEnd))]
-        endEntry[, Light := F]
-        endEntry[, TrueTransition := F]
-        endEntry[, DayIndic := F]
-        relDat = insertRow(relDat, indexEnd, endEntry)
-      }
-    }
-    full_list[[i]][[j]] = relDat
-    j =j+1
-  }
-  full_list[[i]] = mergeHenData(full_list[[i]])
-}
-trackingFull = mergeHenData(full_list)
-
-rm(hen_list, full_list)
-
-#add duration
-trackingFull[, Duration := (shift(Time, type="lead") - Time), by = HenID]
-#set all last day entries to 1 sec so that missing days don't count into the duration
-trackingFull[hour(Time)== 23 & minute(Time)== 59, Duration := 1]
-
-#indicate which night times belong together
-trackingFull[Light == T, NightCycle := Date]
-trackingFull[hour(Time) > 17|hour(Time) == 17 , NightCycle := Date]
-trackingFull[hour(Time) < 4 & Light == F, NightCycle := Date-1]
-#delete dupliacted entries
-trackingFull = trackingFull[Duration > 0,]
+trackingData = trackingData[tableWoA, on = "Date", nomatch = NULL]
 
 ##### Sequence similarity ####
 
@@ -647,12 +402,10 @@ trackingFull = trackingFull[Duration > 0,]
 #Problem: need to deal with time shift? I think not will resolve themselves  
 
 ###### Between individuals ####
-betweenIndividuals = similarityBetween(trackingFull[Date < as.Date("2020-03-15"),])
-betweenIndividuals2 = similarityBetween(trackingFull[Date > as.Date("2020-03-14"),])
+betweenIndividuals = similarityBetween(trackingData[Date < as.Date("2020-03-15"),])
+betweenIndividuals2 = similarityBetween(trackingData[Date > as.Date("2020-03-14"),])
 
-#TODO: data check: make sure rows and cols are in the same order for every day 
-
-meanData = data.table(Date = unique(trackingFull$Date),
+meanData = data.table(Date = unique(trackingData$Date),
                       Mean = c(unlist(lapply(betweenIndividuals, function(x){ mean(x, na.rm = TRUE)})),
                                unlist(lapply(betweenIndividuals2, function(x){ mean(x, na.rm = TRUE)}))),
                       Median = c(unlist(lapply(betweenIndividuals, function(x){ median(x, na.rm = TRUE)})),
@@ -800,18 +553,79 @@ assortment.continuous(similSimply, V(g)$domIndex, weighted = TRUE, SE = FALSE, M
 
 
 #reformat lists into datatables containing cols of HenID1, HenID2, Date, Similarity
-sample = lapply(betweenIndividuals, function(x){as.data.table(as.table(x))})
-sample = rbindlist(lapply(sample, function(x){x[, Date := rep(names(x), .N)]; return(x)}))
+sample = lapply(betweenIndividuals, function(x){ x[upper.tri(x) & is.na(x)] = -1; 
+                                                  x[lower.tri(x)] = NA; diag(x) = NA; return(x)})
+sample = na.omit(rbindlist(lapply(sample, function(x){as.data.table(as.table(x))})))
 colnames(sample) = c("Hen1", "Hen2", "Similarity")
-nPairs = length(unique(paste(sample$Hen1,sample$Hen2)))
+sample[Similarity == -1, Similarity := NA] 
+nPairs = length(unique(paste(sample$Hen1, sample$Hen2)))
 sample[, Date := as.IDate(rep(names(betweenIndividuals), each = nPairs))]
-sample[,all(is.na(Similarity)), by = Date]
+
+sample2 = lapply(betweenIndividuals2, function(x){ x[upper.tri(x) & is.na(x)] = -1; 
+                                                  x[lower.tri(x)] = NA; diag(x) = NA; return(x)})
+sample2 = na.omit(rbindlist(lapply(sample2, function(x){as.data.table(as.table(x))})))
+colnames(sample2) = c("Hen1", "Hen2", "Similarity")
+sample2[Similarity == -1, Similarity := NA] 
+nPairs = length(unique(paste(sample2$Hen1, sample2$Hen2)))
+sample2[, Date := as.IDate(rep(names(betweenIndividuals2), each = nPairs))]
+
+dataBetween = na.omit(rbind(sample, sample2))
+
+dataBetween[, Hen1_Pen := socialData$Pen[match(Hen1, socialData$Hen)]]
+dataBetween[, Hen2_Pen := socialData$Pen[match(Hen2, socialData$Hen)]]
+dataBetween[, Hen1_Ratio := socialData$Ratio[match(Hen1, socialData$Hen)]]
+dataBetween[, Hen2_Ratio := socialData$Ratio[match(Hen2, socialData$Hen)]]
+dataBetween[, PenBool := Hen1_Pen == Hen2_Pen]
+dataBetween[, DiffRatio := abs(Hen1_Ratio - Hen2_Ratio)]
+dataBetween= dataBetween[tableWoA, on = "Date", nomatch = NULL]
+
+#build Model
+hist(dataBetween$Similarity)
+
+model.Between = lmer(Similarity ~ DiffRatio*PenBool+ DiffRatio*WoA + (1|Hen1) + (1|Hen2), data = dataBetween)
+null.Between = lmer(Similarity ~ 1+ (1|Hen1) + (1|Hen2), data = dataBetween)
+anova(model.Between, null.Between)
+resid.Between = simulateResiduals(model.Between, 1000)
+plot(resid.Between)
+plotResiduals(resid.Between, form = dataBetween$DiffRatio)
+plotResiduals(resid.Between, form = dataBetween$PenBool)
+plotResiduals(resid.Between, form = dataBetween$WoA)
+summary(model.Between)
+parameters(model.Between)
+plot(allEffects(model.Between))
+
+dataWithin[, PredictWithin := predict(model.Within)]
 
 
+#test random Ratio allocation
+#TODO: or randomise similarity within day to take out day und ratio effect
+
+betaTable = data.table(Run = "Orig", t(fixef(model.Between)))
+colnames(betaTable)[3] = "DiffRatio_rand"
+colnames(betaTable)[6] = "DiffRatio_rand:PenBoolTRUE"
+colnames(betaTable)[7] = "DiffRatio_rand:WoA"
+
+set.seed(42)
+for (i in 1:1000){
+  cat("Run:",i, "\n")
+  socialData[, randRatio := sample(Ratio)]
+  dataBetween[, Hen1_Ratio_rand := socialData$randRatio[match(Hen1, socialData$Hen)]]
+  dataBetween[, Hen2_Ratio_rand := socialData$randRatio[match(Hen2, socialData$Hen)]]
+  dataBetween[, DiffRatio_rand := abs(Hen1_Ratio_rand - Hen2_Ratio_rand)]
+  model.Between.rand = lmer(Similarity ~ DiffRatio_rand*PenBool+ DiffRatio_rand*WoA + (1|Hen1) + (1|Hen2), data = dataBetween)
+  entry = data.table(Run = as.character(i), t(fixef(model.Between.rand)))
+  betaTable= rbind(betaTable, entry)
+}
+
+ggplot(data = betaTable, aes(x= `DiffRatio_rand:WoA`))+
+  geom_histogram()+
+  geom_vline(xintercept = betaTable[Run == "Orig", `DiffRatio_rand:WoA`], colour = "red")
+
+p = (sum(betaTable[Run != "Orig", `DiffRatio_rand:WoA`] <= betaTable[Run == "Orig", `DiffRatio_rand:WoA`]) + 1)/dim(betaTable)[1]
 
 ### Isolate by Nestbox behaviour
 
-btwIndivNest = similarityBetween(trackingFull, zone = "Ramp_Nestbox", interval = "morning")
+btwIndivNest = similarityBetween(trackingData, zone = "Ramp_Nestbox", interval = "morning")
 
 assortNest = data.table(Date = as_date(colnames(btwIndivNest)[-c(1,2, .N)]))
 assortNest[, Assort := 0]
@@ -860,7 +674,9 @@ assortativity(g, V(g)$domIndex)
 
 ###### Within individuals ####
 
-withinIndividuals = similarityWithin(trackingFull)
+#TODO: null-model für p-value
+
+withinIndividuals = similarityWithin(trackingData)
 # Reshape data from wide to long format
 withinIndividualsL = melt(withinIndividuals,  
                            id.vars     = c("Date"),
@@ -890,7 +706,7 @@ dataWithin[Ratio < 0.5, RatioSplit := "Sub"]
 model.Within = lmer(Similarity ~ Ratio*WoA + (1|Pen/HenID), data = dataWithin)
 #model.Within = lmer(Similarity ~ Ratio + (WoA|HenID), data = dataWithin)
 resid.Within = simulateResiduals(model.Within, 1000)
-plot(resid.Within)
+plot(resid.Within) #TODO: okay? -> bootstrapping?
 plotResiduals(resid.Within, form = dataWithin$Ratio)
 plotResiduals(resid.Within, form = dataWithin$WoA)
 summary(model.Within)
@@ -988,17 +804,17 @@ ggplot(data = randomSims, aes(x = as.factor(HenID), y = meanSimil))+
 ###### vertical travel distance ############### 
 # number of vertically crossed zones during light hours, divided by the seconds of the animals spent inside
 #create vector where wintergarden doesn't exist (replaced by litter)
-trackingFull[, distZone := Zone]
-trackingFull[Zone == "Wintergarten", distZone := "Litter"]
+trackingData[, distZone := Zone]
+trackingData[Zone == "Wintergarten", distZone := "Litter"]
 #add zone vector shifted by one
-trackingFull[, nextZone := c(distZone[-1], NA), by = HenID]
+trackingData[, nextZone := c(distZone[-1], NA), by = HenID]
 #calculate distance travelled by using function defineDistance
-trackingFull[, distVertical := apply(X = cbind(distZone, nextZone), MARGIN = 1, FUN= defineDistance), by = HenID]
+trackingData[, distVertical := apply(X = cbind(distZone, nextZone), MARGIN = 1, FUN= defineDistance), by = HenID]
 
 ###### sleeping spot ############
 
 #durations per zone per bird per day during dark hours
-durDailyD = trackingFull[Light == F, .(DurationNight = sum(Duration)), by = .(HenID, Zone, NightCycle)]
+durDailyD = trackingData[Light == F, .(DurationNight = sum(Duration)), by = .(HenID, Zone, NightCycle)]
 durDailyD = durDailyD[order(HenID),]
 #extract maximum Zone for each bird per day
 mainDurDailyD = durDailyD[, .SD[which.max(DurationNight)], by = .(HenID, NightCycle)]
@@ -1008,19 +824,20 @@ mainDurDailyD[, onTop := ifelse(Zone == "Tier_4", 1, 0)]
 ###### wintergarden use #####
 #all Wintergarten entries per bird
 #careful: on vaccination days garten opened later!
-dailyGarten = trackingFull[Zone == "Wintergarten", .(Duration = Duration), by = .(HenID, Time, Date)]
+dailyGarten = trackingData[Zone == "Wintergarten", .(Duration = Duration), by = .(HenID, Time, Date)]
 #extract if hen goes out on day or not
-inGarten = trackingFull[, .(Out = ifelse(any(Zone == "Wintergarten"), 1, 0)), by = .(HenID, Date)]
+inGarten = trackingData[, .(Out = ifelse(any(Zone == "Wintergarten"), 1, 0)), by = .(HenID, Date)]
 #extract how long each hen went out per day
 durDailyGarten = dailyGarten[, .(DurationGarten = sum(Duration)), by = .(HenID, Date)]
 # latency to go out
-latGarten = dailyGarten[, .(LatencyGarten = Time[1] - ymd_hms(paste(as_date(Time[1]), "10:00:00"))), by = .(HenID, Date)]
+latGarten = dailyGarten[, .(LatencyGarten = Time[1] - ymd_hms(paste(as_date(Time[1]), "10:00:00")), 
+                            Time = Time[1]), by = .(HenID, Date)]
 
 ###### Time in nestbox zone ########
 #all Nestbox entries per bird
-dailyNest = trackingFull[Light == T & Zone == "Ramp_Nestbox", .(Duration = Duration), by = .(HenID, Time, Date)]
+dailyNest = trackingData[Light == T & Zone == "Ramp_Nestbox", .(Duration = Duration), by = .(HenID, Time, Date)]
 #extract if hen was in nest zone on day or not
-inNest = trackingFull[Light == T, .(NestZone = ifelse(any(Zone == "Ramp_Nestbox"), 1, 0)), by = .(HenID, Date)]
+inNest = trackingData[Light == T, .(NestZone = ifelse(any(Zone == "Ramp_Nestbox"), 1, 0)), by = .(HenID, Date)]
 #extract how long each hen went out per day
 durDailyNest = dailyNest[, .(DurationNest = sum(Duration), MedDurNest = sum(Duration)/2), by = .(HenID, Date)]
 # add duration and medDur to daily nest zone entries for latency calculations
@@ -1037,7 +854,7 @@ timeNest = timeNest[del == F, .(HenID, Date, TimeNest)]
 
 
 #create data.table containing all daily measures
-varOfInterest = trackingFull[Light == T, .(vertTravelDist = sum(distVertical)), by = .(HenID, Date, Pen, WoA)]
+varOfInterest = trackingData[Light == T, .(vertTravelDist = sum(distVertical)), by = .(HenID, Date, Pen, WoA)]
 #careful with join not to loose the hens for hens who don't go out for example
 #full outer join
 varOfInterest = varOfInterest[mainDurDailyD, on = c(HenID = "HenID", Date = "NightCycle")]
@@ -1265,6 +1082,7 @@ ggplot(data = varOfInterest[Highlight != "Any",],
   guides(color = guide_legend(nrow = 4))
 
 ###### Nestbox Time #####
+hist(as.numeric(varOfInterest$TimeNest))
 model.Nest = lmer(as.numeric(TimeNest) ~ Ratio*WoA+ (1|Pen/HenID), data = varOfInterest)
 model.Nest = lmer(as.numeric(TimeNest) ~ Ratio*WoA + (1|HenID),  data = varOfInterest)
 resid.Nest = simulateResiduals(model.Nest, 1000)
@@ -1272,3 +1090,79 @@ plot(resid.Nest)
 plotResiduals(resid.Nest, form = varOfInterest$Ratio[!is.na(varOfInterest$TimeNest)])
 plotResiduals(resid.Nest, form = varOfInterest$DateID[!is.na(varOfInterest$TimeNest)])
 summary(model.Nest)
+
+
+#### Time series plots #########################
+#relevant times
+times = list(ymd_hms(c("2019-11-12 03:30:00", "2019-11-12 17:30:00")),
+             ymd_hms(c("2019-11-21 03:30:00", "2019-11-21 17:30:00")),
+             ymd_hms(c("2019-11-30 02:30:00", "2019-11-30 17:30:00")),
+             ymd_hms(c("2019-12-08 02:30:00", "2019-12-08 17:30:00")),
+             ymd_hms(c("2019-12-20 02:30:00", "2019-12-20 17:30:00")))
+
+hen_list <- vector(mode='list', length=length(hens))
+j = 1
+for (hen in hens) {
+  hen_list[[j]] <- vector(mode='list', length=5)
+  for (i in 1:5){
+    hen_list[[j]][[i]] = extractInterval(splitHen[[hen]], times[[i]][1], times[[i]][2])
+  }
+  j= j+1
+} 
+
+
+#make overview plots per hen
+for (i in 1:length(hens)){
+  plotData = mergeHenData(hen_list[[i]])
+  plotData[, Date := as.factor(as_date(Time))]
+  plotData[, Time_x := as_hms(Time)]
+  plotData[, Zone := factor(Zone, levels= c("Wintergarten", "Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
+  ggplot(plotData, aes(x = Time_x, y = Zone)) + 
+    geom_step(group = 1) + 
+    geom_point() + 
+    facet_grid(Date~.)+
+    labs(x = "time", y = "Zones") +
+    ggtitle(hens[i])
+  #scale_x_discrete(labels = x_times) + 
+  #theme(axis.ticks = element_blank(), axis.text.y = element_text(size = 6))+
+  #scale_y_discrete(labels = c("WG", "1", "2", "3", "4"))
+  
+  ggsave(filename = paste0(hens[i],".png"), plot = last_plot(), 
+         width = 18, height = 20, dpi = 300, units = "cm")
+}
+
+plotData = trackingData
+plotData[, Date := as.factor(Date)]
+plotData[, Time_x := as_hms(Time)]
+plotData[, Zone := factor(Zone, levels= c("Wintergarten", "Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
+
+# #ideas for plots: for each individual an average step function plot
+# #requires: full sequence for every day
+# 
+# splitHen = splitHenData(trackingData)
+# hens = unique(trackingData$HenID)
+# average_hen <- vector(mode='list', length=length(hens))
+# i = 1
+# for (i in 1:length(hens)) {
+#   cat("Hen", i)
+#   list = fillSeqHenData(splitHen[[i]])
+#   #cat("done")
+#   average_hen[[i]] = averageDailyZone(list)
+# } 
+# 
+# 
+# #make overview plots per hen
+# for (i in 1:length(hens)){
+#   plotData = average_hen[[i]]
+#   plotData[, Zone := factor(Zone, levels= c("Wintergarten", "Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
+#   ggplot(plotData, aes(x = Time, y = Zone)) + 
+#     geom_step(group = 1) + 
+#     geom_point() + 
+#     labs(x = "time", y = "Zones") +
+#     ggtitle(hens[i])+
+#     theme_bw(base_size = 18)
+#   
+#   
+#   ggsave(filename = paste0(hens[i],".png"), plot = last_plot(), 
+#          width = 40, height = 18, dpi = 300, units = "cm")
+# }
