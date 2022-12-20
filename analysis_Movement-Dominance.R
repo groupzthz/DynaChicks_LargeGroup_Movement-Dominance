@@ -13,9 +13,11 @@ library(hms)
 library(parameters)
 library(igraph)
 library(emmeans)
+library(MuMIn) #R^2 calculations
 
 #load functions
 source("functions.R")
+source("prepareTracking.R")
 
 ##### Loading and preparing Data ###########
 #load tracking data
@@ -234,7 +236,7 @@ ggplot(data = henData, aes(y = gain, x = Ratio))+
 #   #facet_grid(.~Pen)+
 #   theme_classic(base_size = 18)
 
-#TODO: take out second order interaction
+
 model.Weight = lmer(weight ~ poly(WoA, 2)+ WoA:Ratio + Ratio +(1|Pen), data = henDataLong)
 null.Weight =  lmer(weight ~ 1 +(1|Pen), data = henDataLong)
 resid.Weight = simulateResiduals(model.Weight, 1000)
@@ -245,6 +247,10 @@ summary(model.Weight)
 anova(model.Weight, null.Weight)
 parameters(model.Weight)
 plot(allEffects(model.Weight))
+#variance explained by fixed factors and entire model
+r.squaredGLMM(model.Weight, null.Weight)
+emtrends(model.Weight, ~WoA*Ratio)
+
 
 library(emmeans)
 plotData = as.data.table(emmeans(model.Weight, ~ pairwise ~ WoA*Ratio, at =  list(Ratio = quantile(henDataLong$Ratio),
@@ -394,12 +400,16 @@ trackingData = prepareTrackingData(trackingData, hens)
 #include Week of age
 trackingData = trackingData[tableWoA, on = "Date", nomatch = NULL]
 
+#fwrite(trackingData, "trackingData.csv", sep = ";")
+trackingData <- fread("trackingData.csv")
+rm(trackingData)
+
 ##### Sequence similarity ####
 
 #sequence similarity calculated by how many seconds two timelines agree and how many they disagree
 #calculated within birds -> comparing consecutive (or further away?) days
-#Question: split by day and night hours?
-#Problem: need to deal with time shift? I think not will resolve themselves  
+#only look at day hours
+#Problem: need to deal with time shift for within? I think not will resolve itself  
 
 ###### Between individuals ####
 betweenIndividuals = similarityBetween(trackingData[Date < as.Date("2020-03-15"),])
@@ -417,12 +427,16 @@ meanData = data.table(Date = unique(trackingData$Date),
                       Above = c(unlist(lapply(betweenIndividuals, function(x){ sum(x>0.6, na.rm = TRUE)})),
                               unlist(lapply(betweenIndividuals2, function(x){ sum(x>0.6, na.rm = TRUE)}))),
                       Below = c(unlist(lapply(betweenIndividuals, function(x){ sum(x<0.2, na.rm = TRUE)})),
-                                unlist(lapply(betweenIndividuals2, function(x){ sum(x<0.2, na.rm = TRUE)})))
+                                unlist(lapply(betweenIndividuals2, function(x){ sum(x<0.2, na.rm = TRUE)}))),
+                      Q1 = c(unlist(lapply(betweenIndividuals, function(x){ quantile(x, 0.25,na.rm = TRUE)})),
+                                unlist(lapply(betweenIndividuals2, function(x){ quantile(x, 0.25, na.rm = TRUE)}))),
+                      Q3 = c(unlist(lapply(betweenIndividuals, function(x){ quantile(x, 0.75,na.rm = TRUE)})),
+                             unlist(lapply(betweenIndividuals2, function(x){ quantile(x, 0.75, na.rm = TRUE)})))
 )
 
 ggplot(meanData, aes(x = Date))+
-  geom_pointrange(aes(y = Mean, ymin = Mean-SD, ymax = Mean+SD))+
-  geom_point(aes(y = Median), color = "red")+
+  geom_pointrange(aes(y = Median, ymin = Q1, ymax = Q3))+
+  geom_point(aes(y = Mean), color = "red")+
   #geom_point(aes(y = Max))+
   theme_classic(base_size = 18)
 ggplot(meanData, aes(x = Date))+
@@ -432,112 +446,35 @@ ggplot(meanData, aes(x = Date))+
   geom_smooth(aes(y = Above))+
   theme_classic(base_size = 18)
 
-similSimply1 = lapply(betweenIndividuals, function(x){ x[x < 0.7|is.na(x)] = 0; x[(x > 0.7)|(x == 0.7)] = 1; x})
-similSimply1 = Reduce('+', similSimply1)
-similSimply2 = lapply(betweenIndividuals2, function(x){ x[x < 0.7|is.na(x)] = 0; x[(x > 0.7)|(x == 0.7)] = 1; x})
-similSimply2 = Reduce('+', similSimply2)
-similSimply = similSimply1 + similSimply2
-
-similSimply1 = lapply(betweenIndividuals, function(x){ x[is.na(x)] = 0; x})
-similSimply1 = Reduce('+', similSimply1)
-similSimply2 = lapply(betweenIndividuals2, function(x){ x[is.na(x)] = 0; x})
-similSimply2 = Reduce('+', similSimply2)
-similSimply = similSimply1 + similSimply2
-noData1 = lapply(betweenIndividuals, function(x){ x[!is.na(x)] = 0; x[is.na(x)] = 1; x})
-noData1 = Reduce('+', noData1)
-noData2 = lapply(betweenIndividuals2, function(x){ x[!is.na(x)] = 0; x[is.na(x)] = 1; x})
-noData2 = Reduce('+', noData2)
-noData = (noData1 + noData2 - 179)*-1
-
-similSimply = similSimply/noData
-
-mean(similSimply, na.rm = TRUE)
-max(similSimply, na.rm = TRUE)
-
-similSimply[is.na(similSimply)] = 0
-similSimply = similSimply + t(similSimply)
-
-
-#[similSimply <0.45]= 0
-
-g  <- graph.adjacency(similSimply,mode = "undirected", weighted = TRUE, diag = F)
-bc <- edge.betweenness.community(g)
-#par(mfrow=c(1,2))
-plot(as.dendrogram(bc))
-#network vertex names
-V(g)$name
-#inspect network edge and node attributes
-edge_attr(g)
-vertex_attr(g)
-V(g)$domIndex <- socialData$Ratio[match(V(g)$name, paste0("Hen_",as.character(socialData$HenID)))]
-V(g)$Pen <- socialData$Pen[match(V(g)$name, paste0("Hen_",as.character(socialData$HenID)))]
-plot(g, edge.arrow.size=.5, vertex.label.color="black", vertex.label.dist=1.5,
-     vertex.color=c( "pink", "skyblue")[1+(V(g)$domIndex>0.5)] ) 
-assortativity(g, V(g)$domIndex, types1 = graph.strength(g))
-E(g)$width <- E(g)$weight*3
-plot(g, edge.arrow.size=.5, vertex.label.color="black", vertex.label.dist=1.5,
-     vertex.color=V(g)$Pen) 
-assortativity(g, V(g)$Pen)
-library(assortnet)
-assortment.continuous(similSimply, V(g)$domIndex, weighted = TRUE, SE = FALSE, M = 1)
-
-#old first tests
-# mean(as.matrix(betweenIndividuals[, -c(1,2)]), na.rm = T)
+# similSimply1 = lapply(betweenIndividuals, function(x){ x[x < 0.7|is.na(x)] = 0; x[(x > 0.7)|(x == 0.7)] = 1; x})
+# similSimply1 = Reduce('+', similSimply1)
+# similSimply2 = lapply(betweenIndividuals2, function(x){ x[x < 0.7|is.na(x)] = 0; x[(x > 0.7)|(x == 0.7)] = 1; x})
+# similSimply2 = Reduce('+', similSimply2)
+# similSimply = similSimply1 + similSimply2
 # 
-# ggplot(data = betweenIndividuals[, c(1,2,4)], aes(x = V1, y = V2))+
-#   geom_tile(aes(fill = as.numeric(`2019-11-12`)), colour = "white") +
-#   scale_fill_gradient(low = "white", high = "red")
+# similSimply1 = lapply(betweenIndividuals, function(x){ x[is.na(x)] = 0; x})
+# similSimply1 = Reduce('+', similSimply1)
+# similSimply2 = lapply(betweenIndividuals2, function(x){ x[is.na(x)] = 0; x})
+# similSimply2 = Reduce('+', similSimply2)
+# similSimply = similSimply1 + similSimply2
+# noData1 = lapply(betweenIndividuals, function(x){ x[!is.na(x)] = 0; x[is.na(x)] = 1; x})
+# noData1 = Reduce('+', noData1)
+# noData2 = lapply(betweenIndividuals2, function(x){ x[!is.na(x)] = 0; x[is.na(x)] = 1; x})
+# noData2 = Reduce('+', noData2)
+# noData = (noData1 + noData2 - 179)*-1
 # 
-# betweenIndividuals[, pair := paste(V1, "-", V2)]
-# betweenIndividualsL = melt(betweenIndividuals,                          # Reshape data from wide to long format
-#                               id.vars     = c("pair", "V1", "V2"),
-#                            variable.name = "Date", 
-#                            value.name = "Similarity")
-# betweenIndividualsL[, Date := as_date(Date)]
+# similSimply = similSimply/noData
+# 
+# mean(similSimply, na.rm = TRUE)
+# max(similSimply, na.rm = TRUE)
+# 
+# similSimply[is.na(similSimply)] = 0
+# similSimply = similSimply + t(similSimply)
 # 
 # 
-# ggplot(data = betweenIndividualsL[V1 == "Hen_108",], aes(x = Date, y = Similarity))+
-#   geom_line(aes(group = pair))
+# #[similSimply <0.45]= 0
 # 
-# agrBetween = betweenIndividualsL[, .(Mean = mean(Similarity, na.rm = T), 
-#                                      SD = sd(Similarity, na.rm = T)), by = .(pair, V1, V2)]
-# ggplot(data = agrBetween, aes(x = V1, y = V2))+
-#   geom_tile(aes(fill = Mean), colour = "white") +
-#   scale_fill_gradient(low = "white", high = "red")
-# 
-# 
-# #Assortativity coefficients close to 1 indicate that there is very high 
-# #likelihood of two vertices with the same property being connected.
-# assort = data.table(Date = as_date(colnames(betweenIndividuals)[-c(1,2, .N)]))
-# assort[, Assort := 0]
-# # high degree assortativity is a measure of preferential attachment in organizations, 
-# # where highly connected vertices are connected with each other and a large number 
-# # of vertices with low degree make up the remainder of the network.
-# assort[, Degree := 0]
-# dailySimil = vector(mode='list', length= length(colnames(betweenIndividuals)[-c(1,2, .N)]))
-# i = 1
-# for(day in colnames(betweenIndividuals)[-c(1,2, .N)]){
-#   cat(day)
-#   dailySimil[[i]] = as.matrix(rbind(cbind(data.table(Hen_108 = rep(NA, 34)), 
-#                                   dcast(betweenIndividuals[,.SD, .SDcols = c("V1", "V2", (day))], V1 ~ V2)[,-1]),
-#                             data.table(Hen_108 = NA), fill = T))
-#   rownames(dailySimil[[i]]) = colnames(dailySimil[[i]])
-#   simMatrix = dailySimil[[i]]
-#   simMatrix = simMatrix *10
-#   #maybe set threshold smarter by checking 
-#   simMatrix[simMatrix < 3.5] = 0
-#   g  <- graph.adjacency(simMatrix,mode = "undirected", weighted = T, diag = F)
-#   #add network node attribute
-#   V(g)$domIndex <- socialData$Ratio[match(V(g)$name, paste0("Hen_",as.character(socialData$HenID)))]
-#   assort[Date == (day), Assort := assortativity(g, V(g)$domIndex)]
-#   assort[Date == (day), Degree := assortativity_degree(g)]
-#   i = i+1
-# }
-# 
-# similSimply = lapply(dailySimil, function(x){ x[x < 0.6] = 0; x[(x > 0.6)|(x == 0.6)] = 1; x})
-# 
-# similSimply = Reduce('+', similSimply)
-# g  <- graph.adjacency(similSimply,mode = "undirected", diag = F)
+# g  <- graph.adjacency(similSimply,mode = "undirected", weighted = TRUE, diag = F)
 # bc <- edge.betweenness.community(g)
 # #par(mfrow=c(1,2))
 # plot(as.dendrogram(bc))
@@ -547,9 +484,16 @@ assortment.continuous(similSimply, V(g)$domIndex, weighted = TRUE, SE = FALSE, M
 # edge_attr(g)
 # vertex_attr(g)
 # V(g)$domIndex <- socialData$Ratio[match(V(g)$name, paste0("Hen_",as.character(socialData$HenID)))]
+# V(g)$Pen <- socialData$Pen[match(V(g)$name, paste0("Hen_",as.character(socialData$HenID)))]
 # plot(g, edge.arrow.size=.5, vertex.label.color="black", vertex.label.dist=1.5,
 #      vertex.color=c( "pink", "skyblue")[1+(V(g)$domIndex>0.5)] ) 
-# assortativity(g, V(g)$domIndex)
+# assortativity(g, V(g)$domIndex, types1 = graph.strength(g))
+# E(g)$width <- E(g)$weight*3
+# plot(g, edge.arrow.size=.5, vertex.label.color="black", vertex.label.dist=1.5,
+#      vertex.color=V(g)$Pen) 
+# assortativity(g, V(g)$Pen)
+# library(assortnet)
+# assortment.continuous(similSimply, V(g)$domIndex, weighted = TRUE, SE = FALSE, M = 1)
 
 
 #reformat lists into datatables containing cols of HenID1, HenID2, Date, Similarity
@@ -577,12 +521,16 @@ dataBetween[, Hen1_Ratio := socialData$Ratio[match(Hen1, socialData$Hen)]]
 dataBetween[, Hen2_Ratio := socialData$Ratio[match(Hen2, socialData$Hen)]]
 dataBetween[, PenBool := Hen1_Pen == Hen2_Pen]
 dataBetween[, DiffRatio := abs(Hen1_Ratio - Hen2_Ratio)]
+
 dataBetween= dataBetween[tableWoA, on = "Date", nomatch = NULL]
+
+#fwrite(dataBetween, "dataBetween.csv", sep = ";")
+dataBetween <- fread("dataBetween.csv")
 
 #build Model
 hist(dataBetween$Similarity)
 
-model.Between = lmer(Similarity ~ DiffRatio*PenBool+ DiffRatio*WoA + (1|Hen1) + (1|Hen2), data = dataBetween)
+model.Between = lmer(Similarity ~ PenBool+ DiffRatio*WoA + (1|Hen1) + (1|Hen2), data = dataBetween)
 null.Between = lmer(Similarity ~ 1+ (1|Hen1) + (1|Hen2), data = dataBetween)
 anova(model.Between, null.Between)
 resid.Between = simulateResiduals(model.Between, 1000)
@@ -593,35 +541,42 @@ plotResiduals(resid.Between, form = dataBetween$WoA)
 summary(model.Between)
 parameters(model.Between)
 plot(allEffects(model.Between))
+#variance explained by fixed factors and entire model
+r.squaredGLMM(model.Between, null.Between)
 
-dataWithin[, PredictWithin := predict(model.Within)]
+dataBetween[, PredictSimilarity := predict(model.Between)]
 
-
+ggplot(dataBetween[WoA %in% quantile(WoA),], aes(x = DiffRatio, y = Similarity)) +
+  geom_point(size=2) + 
+  geom_smooth(data = dataBetween[WoA %in% quantile(WoA), mean(PredictSimilarity), by = .(WoA, DiffRatio)], 
+            aes(y =V1), formula = y~x, size=1.5, colour = "red") + 
+  theme_classic(base_size = 18)+ 
+  facet_grid(~WoA)+
+  ylab("daily between-individual similarity")
+#+ 
 #test random Ratio allocation
-#TODO: or randomise similarity within day to take out day und ratio effect
+#TODO: randomise similarity within day to take out day and ratio effect
+#TODO: model on difference in ratio or actual ratios? and if actual then how interaction
+#TODO: how to deal with pen?
 
 betaTable = data.table(Run = "Orig", t(fixef(model.Between)))
-colnames(betaTable)[3] = "DiffRatio_rand"
-colnames(betaTable)[6] = "DiffRatio_rand:PenBoolTRUE"
-colnames(betaTable)[7] = "DiffRatio_rand:WoA"
 
 set.seed(42)
 for (i in 1:1000){
   cat("Run:",i, "\n")
-  socialData[, randRatio := sample(Ratio)]
-  dataBetween[, Hen1_Ratio_rand := socialData$randRatio[match(Hen1, socialData$Hen)]]
-  dataBetween[, Hen2_Ratio_rand := socialData$randRatio[match(Hen2, socialData$Hen)]]
-  dataBetween[, DiffRatio_rand := abs(Hen1_Ratio_rand - Hen2_Ratio_rand)]
-  model.Between.rand = lmer(Similarity ~ DiffRatio_rand*PenBool+ DiffRatio_rand*WoA + (1|Hen1) + (1|Hen2), data = dataBetween)
+  dataBetween[, Similarity_rand := sample(Similarity), by = Date]
+  model.Between.rand = lmer(Similarity_rand ~ DiffRatio*PenBool+ DiffRatio*WoA + (1|Hen1) + (1|Hen2), data = dataBetween)
   entry = data.table(Run = as.character(i), t(fixef(model.Between.rand)))
   betaTable= rbind(betaTable, entry)
 }
 
-ggplot(data = betaTable, aes(x= `DiffRatio_rand:WoA`))+
+ggplot(data = betaTable, aes(x= `DiffRatio:WoA`))+
   geom_histogram()+
-  geom_vline(xintercept = betaTable[Run == "Orig", `DiffRatio_rand:WoA`], colour = "red")
+  geom_vline(xintercept = betaTable[Run == "Orig", `DiffRatio:WoA`], colour = "red")
 
-p = (sum(betaTable[Run != "Orig", `DiffRatio_rand:WoA`] <= betaTable[Run == "Orig", `DiffRatio_rand:WoA`]) + 1)/dim(betaTable)[1]
+p = (sum(betaTable[Run != "Orig", `DiffRatio:WoA`] <= betaTable[Run == "Orig", `DiffRatio:WoA`]) + 1)/dim(betaTable)[1]
+
+#TODO: run again, wrong randomisation...
 
 ### Isolate by Nestbox behaviour
 
@@ -674,8 +629,6 @@ assortativity(g, V(g)$domIndex)
 
 ###### Within individuals ####
 
-#TODO: null-model für p-value
-
 withinIndividuals = similarityWithin(trackingData)
 # Reshape data from wide to long format
 withinIndividualsL = melt(withinIndividuals,  
@@ -703,15 +656,39 @@ dataWithin[, NonSimilar := 1-Similarity]
 dataWithin[, RatioSplit := "Dom"]
 dataWithin[Ratio < 0.5, RatioSplit := "Sub"]
 
+#fwrite(dataWithin, "dataWithin.csv", sep = ";")
+dataWithin <- fread("dataWithin.csv")
+#rm(dataWithin)
+
 model.Within = lmer(Similarity ~ Ratio*WoA + (1|Pen/HenID), data = dataWithin)
 #model.Within = lmer(Similarity ~ Ratio + (WoA|HenID), data = dataWithin)
+null.Within = lmer(Similarity ~ 1 + (1|Pen/HenID), data = dataWithin)
 resid.Within = simulateResiduals(model.Within, 1000)
-plot(resid.Within) #TODO: okay? -> bootstrapping?
+plot(resid.Within) 
 plotResiduals(resid.Within, form = dataWithin$Ratio)
 plotResiduals(resid.Within, form = dataWithin$WoA)
 summary(model.Within)
 parameters(model.Within)
 plot(allEffects(model.Within))
+r.squaredGLMM(model.Within, null.Within)
+
+betaTableWithin = data.table(Run = "Orig", t(fixef(model.Within)))
+
+set.seed(42)
+for (i in 1:1000){
+  cat("Run:",i, "\n")
+  dataWithin[, Similarity_rand := sample(Similarity), by = Date]
+  model.Within.rand = lmer(Similarity_rand ~ Ratio*WoA + (1|Pen/HenID), data = dataWithin)
+  entry = data.table(Run = as.character(i), t(fixef(model.Within.rand)))
+  betaTableWithin= rbind(betaTableWithin, entry)
+}
+
+ggplot(data = betaTableWithin, aes(x= `Ratio:WoA`))+
+  geom_histogram()+
+  geom_vline(xintercept = betaTableWithin[Run == "Orig", `Ratio:WoA`], colour = "red")
+
+p = (sum(betaTableWithin[Run != "Orig", `Ratio:WoA`] <= betaTableWithin[Run == "Orig", `Ratio:WoA`]) + 1)/dim(betaTableWithin)[1]
+
 
 dataWithin[, PredictWithin := predict(model.Within)]
 
@@ -721,6 +698,15 @@ ggplot(dataWithin, aes(x = Date, y = Similarity, color = RatioSplit)) +
             aes(x = Date, y =V1, colour = RatioSplit),size=1.5) + 
   theme_classic(base_size = 18)+ 
   ylab("daily within-individual similarity")#+ 
+
+ggplot(dataWithin[WoA %in% quantile(WoA),], aes(x = Ratio, y = Similarity)) +
+  geom_point(size=2) + 
+  geom_smooth(data = dataWithin[WoA %in% quantile(WoA), mean(PredictWithin), by = .(WoA, Ratio)], 
+              aes(y =V1), formula = y~x, method = lm, size=1.5, colour = "red") + 
+  theme_classic(base_size = 18)+ 
+  facet_grid(~WoA)+
+  ylab("daily within-individual similarity")
+
 
 #plot individual variation
 ggplot(data = dataWithin, aes(x = WoA, y = PredictWithin)) + 
@@ -763,7 +749,7 @@ posterior_Pen <- apply(simulated@ranef$"Pen"[ , , 1],1,var)
 posterior_residual <- simulated@sigma^2
 quantile(posterior_HenID / (posterior_HenID + posterior_Pen + posterior_residual), prob=c(0.025, 0.5, 0.975))
 
-#coeffeicient of variation for beteween individual variance
+#coefficient of variation for between individual variance
 CVi <- sqrt(posterior_HenID) / summary(model.Within)$coefficients[1] 
 quantile(CVi,prob=c(0.025, 0.5, 0.975))
 
@@ -800,6 +786,7 @@ ggplot(data = randomSims, aes(x = as.factor(HenID), y = meanSimil))+
 ##### Parameters ########
 
 # calculate daily parameters per bird 
+#TODO: test dass keine zeitzonen probleme existieren
 
 ###### vertical travel distance ############### 
 # number of vertically crossed zones during light hours, divided by the seconds of the animals spent inside
@@ -814,61 +801,94 @@ trackingData[, distVertical := apply(X = cbind(distZone, nextZone), MARGIN = 1, 
 ###### sleeping spot ############
 
 #durations per zone per bird per day during dark hours
-durDailyD = trackingData[Light == F, .(DurationNight = sum(Duration)), by = .(HenID, Zone, NightCycle)]
-durDailyD = durDailyD[order(HenID),]
+dailySleep = trackingData[Light == F, .(DurationNight = sum(Duration)), by = .(HenID, Zone, NightCycle)][order(NightCycle, HenID)]
+dailySleep = dailySleep[, .SD[which.max(DurationNight)], by = .(HenID, NightCycle)]
 #extract maximum Zone for each bird per day
-mainDurDailyD = durDailyD[, .SD[which.max(DurationNight)], by = .(HenID, NightCycle)]
-mainDurDailyD[, onTop := ifelse(Zone == "Tier_4", 1, 0)]
+dailySleep[, onTop := ifelse(Zone == "Tier_4", 1, 0)]
+colnames(dailySleep)[3] = "ZoneSleep"
 
 
 ###### wintergarden use #####
-#all Wintergarten entries per bird
-#careful: on vaccination days garten opened later!
-dailyGarten = trackingData[Zone == "Wintergarten", .(Duration = Duration), by = .(HenID, Time, Date)]
 #extract if hen goes out on day or not
-inGarten = trackingData[, .(Out = ifelse(any(Zone == "Wintergarten"), 1, 0)), by = .(HenID, Date)]
+dailyGarten = trackingData[, .(Out = ifelse(any(Zone == "Wintergarten"), 1, 0)), by = .(HenID, Date)][order(Date, HenID)]
 #extract how long each hen went out per day
-durDailyGarten = dailyGarten[, .(DurationGarten = sum(Duration)), by = .(HenID, Date)]
+dailyGarten[Out == 1, DurationGarten := trackingData[Zone == "Wintergarten", .(sum(Duration)), by = .(HenID, Date)][order(Date, HenID), V1]]
+dailyGarten[Out == 0, DurationGarten := 0]
 # latency to go out
-latGarten = dailyGarten[, .(LatencyGarten = Time[1] - ymd_hms(paste(as_date(Time[1]), "10:00:00")), 
-                            Time = Time[1]), by = .(HenID, Date)]
+#careful: on vaccination days garten opened later! take out vacc days
+vacc =  c(ymd("2019-11-08"), ymd("2019-12-24"), ymd("2020-01-14"),
+          ymd("2020-02-18"), ymd("2020-03-03"), ymd("2020-04-14"), 
+          ymd("2020-06-09"), ymd("2020-06-23"))
 
-###### Time in nestbox zone ########
-#all Nestbox entries per bird
-dailyNest = trackingData[Light == T & Zone == "Ramp_Nestbox", .(Duration = Duration), by = .(HenID, Time, Date)]
+dailyGarten[Out == 1, EntryGarten := trackingData[Zone == "Wintergarten", Time[1], by = .(HenID, Date)][order(Date,HenID), V1]]
+dailyGarten[Out == 1, LatencyGarten := EntryGarten - ymd_hms(paste(Date, "10:00:00"))]
+dailyGarten[Date %in% vacc, LatencyGarten := NA]
+
+###### Nestbox zone ########
+#Nestbox entries per bird
+#sift out only those in the morning, relevant for egg laying not resting (until 9?)
 #extract if hen was in nest zone on day or not
-inNest = trackingData[Light == T, .(NestZone = ifelse(any(Zone == "Ramp_Nestbox"), 1, 0)), by = .(HenID, Date)]
-#extract how long each hen went out per day
-durDailyNest = dailyNest[, .(DurationNest = sum(Duration), MedDurNest = sum(Duration)/2), by = .(HenID, Date)]
-# add duration and medDur to daily nest zone entries for latency calculations
-dailyNest = durDailyNest[dailyNest, on = c("HenID", "Date")]
+dailyNest = trackingData[Light == T & hour(Time) < 9, .(NestZone = ifelse(any(Zone == "Ramp_Nestbox"), 1, 0)), by = .(HenID, Date)][order(Date, HenID)]
+#extract how long each hen was in the box
+dailyNest[NestZone == 1, DurationNest := trackingData[Light == T & hour(Time) < 9 & Zone == "Ramp_Nestbox", sum(Duration), by = .(HenID, Date)][order(Date, HenID), V1]]
+dailyNest[NestZone == 0, DurationNest := 0]
+#extract when median duration in the nest is reached
+dailyNest[, MedDurNest := ifelse(NestZone == 1,  round(DurationNest/2),NA) ]
 # median time point for half duration in nestbox
-timeNest = dailyNest[, .(TimeNest = Time[1] + MedDurNest), by = .(HenID, Date)]
-timeNest[, del := duplicated(TimeNest), by = .(HenID, Date)]
-timeNest = timeNest[del == F, .(HenID, Date, TimeNest)]
+dailyNest[NestZone == 1, EntryNest := trackingData[Light == T & hour(Time) < 9 & Zone == "Ramp_Nestbox", Time[1], by = .(HenID, Date)][order(Date, HenID), V1]]
+dailyNest[NestZone == 1, MedTimeNest := EntryNest + MedDurNest]
+
+#switches in and out of the nestbox zone
+helper = trackingData[Light == T & hour(Time) < 9 & Zone == "Ramp_Nestbox" & LightIndic != 1, .(SwitchesNest = .N),by = .(HenID, Date)]
+dailyNest = helper[dailyNest, on = c("HenID", "Date")]
+#TODO: through out switches with only x duration
 
 
 ###### Feeder reactivity #######
-#TODO: 
 #Feeder runs: (ab 22.11.: 2:00), 4:00, 6:00, 8:00, 10:00, 13:00, 15:00, 16:15
 
+set.seed(42)
+dailyFeed = feedReactivity(trackingData)
 
+dailyFeedL = melt(dailyFeed,  
+                  id.vars     = c("Date"),
+                  variable.name = "Hen", 
+                  value.name = "FeedReact")
+dailyFeedL[, HenID := as.numeric(unlist(regmatches(Hen, gregexpr('\\(?[0-9,.]+', Hen))))]
+dailyFeedL = dailyFeedL[order(Date, HenID),]
+dailyFeedL[!(paste(Date, HenID) %in% trackingData[, unique(paste(Date, HenID))]), FeedReact := NA]
+dailyFeedL[!is.na(FeedReact), FeedZoneDur := trackingData[(Zone == "Tier_4" |Zone == "Tier_2") & Light == T, sum(Duration), by = .(HenID, Date)][order(Date, HenID), V1]]
+dailyFeedL = trackingData[(Zone == "Tier_4" ) & Light == T, .(FeedZone4 = sum(Duration)), by = .(HenID, Date)][dailyFeedL, on = c("HenID", "Date")]
+dailyFeedL = trackingData[(Zone == "Tier_2" ) & Light == T, .(FeedZone2 = sum(Duration)), by = .(HenID, Date)][dailyFeedL, on = c("HenID", "Date")]
+
+###### All parameters #######
 #create data.table containing all daily measures
+#vertical travel distance
 varOfInterest = trackingData[Light == T, .(vertTravelDist = sum(distVertical)), by = .(HenID, Date, Pen, WoA)]
-#careful with join not to loose the hens for hens who don't go out for example
-#full outer join
-varOfInterest = varOfInterest[mainDurDailyD, on = c(HenID = "HenID", Date = "NightCycle")]
-varOfInterest = varOfInterest[!is.na(Pen),]
-varOfInterest = inGarten[varOfInterest, on = c(HenID = "HenID", Date = "Date")]
-varOfInterest = durDailyGarten[varOfInterest, on = c(HenID = "HenID", Date = "Date")]
-varOfInterest[is.na(DurationGarten), DurationGarten := 0]
-varOfInterest = latGarten[varOfInterest, on = c(HenID = "HenID", Date = "Date")]
-varOfInterest = durDailyNest[varOfInterest, on = c(HenID = "HenID", Date = "Date")]
-varOfInterest[is.na(DurationNest), DurationNest := 0]
-varOfInterest[is.na(MedDurNest), MedDurNest := 0]
-varOfInterest = timeNest[varOfInterest, on = c(HenID = "HenID", Date = "Date")]
 
-#add socialInformation
+#add duration for each day per zone
+varOfInterest = varOfInterest[dcast(trackingData[Light == T, sum(Duration), by = .(HenID, Date, Zone)], formula = HenID + Date ~ Zone, value.var = "V1", fill = 0), on = c("HenID", "Date")]
+varOfInterest[, TotalDur := rowSums(cbind(Wintergarten, Tier_2, Tier_4, Litter, Ramp_Nestbox))]
+#extract max zone per day
+dailyMaxZone = trackingData[Light == T, sum(Duration), by = .(HenID, Date, Zone)][, .(MaxZone = Zone[which.max(V1)]), by= .(HenID, Date)]
+varOfInterest = varOfInterest[dailyMaxZone, on = c("HenID", "Date")] 
+
+#careful with join direction not to loose the hens, for hens who don't go out for example
+# -> full outer join
+# sleep: max zone, duration in zone, is zone top tier?
+varOfInterest = varOfInterest[dailySleep, on = c(HenID = "HenID", Date = "NightCycle")]
+#delete half nights
+varOfInterest = varOfInterest[!is.na(Pen),]
+# wintergarden: did hen go out? duration in garten, latency to enter 
+varOfInterest = dailyGarten[varOfInterest, on = c(HenID = "HenID", Date = "Date")]
+# nestbox: did hen go in nest?, total duration in nest, time point of median duration in nest 
+varOfInterest = dailyNest[varOfInterest, on = c(HenID = "HenID", Date = "Date")]
+#median duration as pure time stamp
+varOfInterest[, MedTimeNestPure := as.ITime(MedTimeNest)]
+# feed reactivity: time spent in feeder zone during run versus outside run
+varOfInterest = dailyFeedL[varOfInterest, on = c(HenID = "HenID", Date = "Date")]
+
+#add social information (dominance index)
 varOfInterest = socialData[, .(HenID,Ratio,Comb)][varOfInterest, on = "HenID"] 
 
 
@@ -878,18 +898,63 @@ varOfInterest = socialData[, .(HenID,Ratio,Comb)][varOfInterest, on = "HenID"]
 varOfInterest[, Highlight := "Any"]
 varOfInterest[HenID == 82 | HenID == 97 | HenID == 33, Highlight := "Dom"]
 varOfInterest[HenID == 77 | HenID == 5 | HenID == 108, Highlight := "Sub"]
-#make factor out of HenID with levels sorted in ascending Ratio order
+#make factor out of HenID & Pen with levels sorted in ascending Ratio order
 varOfInterest[,HenID := factor(HenID, levels = socialData$HenID)]
+varOfInterest[,Pen := factor(Pen)]
+varOfInterest[,ZoneSleep := factor(ZoneSleep, levels = c("Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
+varOfInterest[,MaxZone := factor(MaxZone, levels = c("Wintergarten", "Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
+#splitting dominance index by 0.5
+varOfInterest[, RatioSplit := "Dom"]
+varOfInterest[Ratio < 0.5, RatioSplit := "Sub"]
 
+
+###### durations in general ####
+
+#heatmap of durations by ratio (hens sorted)
+ggplot(trackingData[Light == T, .(Duration = sum(Duration)), by = .(HenID, Zone)], aes(x = Zone, y = factor(HenID, levels = socialData$HenID))) +
+  geom_tile(aes(fill = Duration), colour = "white") +
+  scale_fill_gradient(low = "white", high = "red")
+
+#heatmap of durations by ratio (hens sorted) by WoA
+ggplot(trackingData[Light == T, .(Duration = sum(Duration)), by = .(HenID, Zone, WoA)][WoA %in% quantile(WoA),], aes(x = Zone, y = factor(HenID, levels = socialData$HenID))) +
+  geom_tile(aes(fill = Duration), colour = "white") +
+  scale_fill_gradient(low = "white", high = "red")+
+  facet_grid(.~WoA)
+
+#most common zone daily
+ggplot(varOfInterest, aes(x = Date, y = factor(MaxZone, levels = c("Wintergarten","Litter", "Tier_2", "Ramp_Nestbox", "Tier_4")), colour = Ratio))+
+  geom_jitter(width = 0.1)+
+  geom_smooth(aes(group = as.factor(HenID)),se = F)+
+  scale_color_gradient(low = "blue", high = "gold")
+
+ggplot(varOfInterest, aes(x = Date, y = factor(MaxZone, levels = c("Wintergarten","Litter", "Tier_2", "Ramp_Nestbox", "Tier_4")), colour = Highlight))+
+  geom_jitter()+
+  geom_smooth(aes(group = as.factor(HenID)),se = F)+
+  scale_colour_manual(values = c("grey", "red", "blue"))
+
+
+###### travel distance #### 
+hist(varOfInterest$vertTravelDist)
+#progression of travel distance over days
+ggplot(varOfInterest, aes(x = Date, y = vertTravelDist, colour = Highlight))+
+  geom_point()+
+  geom_smooth(aes(group = as.factor(HenID)),se = F)+
+  scale_colour_manual(values = c("grey", "red", "blue"))
+ggplot(varOfInterest, aes(x = Date, y = vertTravelDist, colour = Ratio))+
+  geom_point()+
+  geom_smooth(aes(group = as.factor(HenID)),se = F)
 
 ###### sleeping spot ####
 
-#TODO: try plot with comb size
 hist(varOfInterest$onTop)
 hist(varOfInterest[, sum(onTop), by = HenID][,V1])
-#heatmap
-ggplot(varOfInterest, aes(x = Zone, y = as.factor(HenID))) +
-  geom_tile(aes(fill = as.numeric(DurationNight)), colour = "white") +
+#heatmap by comb
+ggplot(varOfInterest[, .(Duration = sum(DurationNight)), by = .(Comb, ZoneSleep)], aes(x = ZoneSleep, y = as.factor(Comb))) +
+  geom_tile(aes(fill = Duration), colour = "white") +
+  scale_fill_gradient(low = "white", high = "red")
+#heatmap by ratio
+ggplot(varOfInterest[, .(Duration = sum(DurationNight)), by = .(HenID, ZoneSleep)], aes(x = ZoneSleep, y = HenID)) +
+  geom_tile(aes(fill = Duration), colour = "white") +
   scale_fill_gradient(low = "white", high = "red")
 #progression of most common sleeping spot on Top or not
 ggplot(varOfInterest, aes(x = Date, y = onTop, colour = Highlight))+
@@ -897,22 +962,28 @@ ggplot(varOfInterest, aes(x = Date, y = onTop, colour = Highlight))+
   geom_smooth(aes(group = HenID),method = "glm", 
               method.args = list(family = "binomial"),se = F)+
   scale_colour_manual(values = c("grey", "red", "blue"))
-
-
-###### travel distance #### 
-hist(varOfInterest$vertTravelDist)
-#progression of travel distance over days
-ggplot(varOfInterest, aes(x = Date, y = vertTravelDist, colour = Ratio))+
+# time spent on top during day
+ggplot(varOfInterest, aes(x = Date, y = generalTop, colour = Highlight))+
   geom_point()+
-  geom_smooth(aes(group = as.factor(HenID)),se = F)
-  #scale_colour_manual(values = c("grey", "red", "blue"))
+  geom_smooth(aes(group = HenID),se = F)+
+  scale_colour_manual(values = c("grey", "red", "blue"))
+ggplot(varOfInterest, aes(x = Date, y = generalTop, colour = Ratio))+
+  geom_point()+
+  geom_smooth(aes(group = HenID),se = F)
+#relation between time spent on top during day and sleeping spot
+ggplot(varOfInterest, aes(x = Tier_4, y = onTop, colour = Highlight))+
+  geom_point()+
+  geom_smooth(color = "red", method = "glm", 
+              method.args = list(family = "binomial"))+
+  scale_colour_manual(values = c("grey", "red", "blue"))
 
-###### Wintergarten ####
+
+###### Wintergarden ####
 
 #Went out or not?
 hist(varOfInterest$Out)
 hist(varOfInterest[, sum(Out), by = HenID][,V1])
-ggplot(varOfInterest, aes(x = Date, y = Out, colour = Highlight))+
+ggplot(varOfInterest, aes(x = WoA, y = Out, colour = Highlight))+
   geom_point()+
   geom_smooth(aes(group = HenID),method = "glm", 
               method.args = list(family = "binomial"),se = F)+
@@ -936,14 +1007,26 @@ ggplot(varOfInterest, aes(x = Date, y = as.numeric(DurationGarten), colour = Hig
 
 ###### Nestbox zone ####
 
-#latency to enter
-varOfInterest[, TimeNestPure := as.ITime(TimeNest)]
-hist(as.numeric(varOfInterest$TimeNestPure))
-#progression of time to enter the nestbox over days
-ggplot(varOfInterest, aes(x = Date, y = as.numeric(TimeNestPure), colour = Ratio))+
+#Went in nest or not?
+hist(varOfInterest$NestZone)
+hist(varOfInterest[, sum(NestZone), by = HenID][,V1])
+#heatmap by ratio
+ggplot(varOfInterest[, .(Sum = .N), by = .(HenID, NestZone)], aes(x = NestZone, y = HenID)) +
+  geom_tile(aes(fill = Sum), colour = "white") +
+  scale_fill_gradient(low = "white", high = "red")
+ggplot(varOfInterest, aes(x = Date, y = NestZone, colour = Highlight))+
   geom_point()+
-  geom_smooth(data = varOfInterest[Highlight != "Any",], aes(group = HenID),se = F)#+
-  #scale_colour_manual(values = c("grey", "red", "blue"))
+  geom_smooth(aes(group = HenID),method = "glm", 
+              method.args = list(family = "binomial"),se = F)+
+  scale_colour_manual(values = c("grey", "red", "blue"))
+
+
+hist(as.numeric(varOfInterest$MedTimeNestPure))
+#progression of time to enter the nestbox over days
+ggplot(varOfInterest, aes(x = Date, y = as.numeric(MedTimeNestPure), colour = Highlight))+
+  geom_point()+
+  geom_smooth(aes(group = HenID),se = F)+
+  scale_colour_manual(values = c("grey", "red", "blue"))
 
 
 #duration in the nestbox zone
@@ -954,24 +1037,96 @@ ggplot(varOfInterest, aes(x = Date, y = as.numeric(DurationNest), colour = Highl
   geom_smooth(aes(group = HenID),se = F)+
   scale_colour_manual(values = c("grey", "red", "blue"))
 
+#switches into nestbox zone
+hist(varOfInterest$SwitchesNest)
+#progression of duration in nestbox over days
+ggplot(varOfInterest, aes(x = Date, y = SwitchesNest, colour = Highlight))+
+  geom_point()+
+  geom_smooth(aes(group = HenID),se = F)+
+  scale_colour_manual(values = c("grey", "red", "blue"))
 
+
+
+###### Feed reactivity ####
+
+hist(varOfInterest$FeedReact)
+#feed reactivity over days
+ggplot(varOfInterest, aes(x = Date, y = FeedReact, colour = Highlight))+
+  geom_point()+
+  geom_smooth(aes(group = as.factor(HenID)),se = F)+
+  scale_colour_manual(values = c("grey", "red", "blue"))
+#total time in feeding zone by ratio
+ggplot(varOfInterest, aes(x = Date, y = FeedZoneDur, colour = Ratio))+
+  geom_point()+
+  geom_smooth(aes(group = as.factor(HenID)),se = F)
+ggplot(varOfInterest, aes(x = Date, y = FeedZone4, colour = Ratio))+
+  geom_point()+
+  geom_smooth(aes(group = as.factor(HenID)),se = F)
+ggplot(varOfInterest, aes(x = Date, y = FeedZone2, colour = Ratio))+
+  geom_point()+
+  geom_smooth(aes(group = as.factor(HenID)),se = F)
+#relationship total time in zone and reactivity
+ggplot(varOfInterest, aes(x = FeedZoneDur, y = FeedReact, colour = Ratio))+
+  geom_point()+
+  geom_smooth(colour = "red",se = T)
+ggplot(varOfInterest, aes(x = FeedZone4, y = FeedReact, colour = Ratio))+
+  geom_point()+
+  geom_smooth(colour = "red",se = T)
+ggplot(varOfInterest, aes(x = FeedZone2, y = FeedReact, colour = Ratio))+
+  geom_point()+
+  geom_smooth(colour = "red",se = T)
+ggplot(varOfInterest, aes(x = FeedZone2, y = FeedZone4, colour = Ratio))+
+  geom_point()+
+  geom_smooth(colour = "red",se = T)
+
+
+#TODO: take out outliers
+cor.test(varOfInterest$FeedZoneDur, varOfInterest$FeedReact)
 
 ##### Test models ######
 
-varOfInterest[, RatioSplit := "Dom"]
-varOfInterest[Ratio < 0.5, RatioSplit := "Sub"]
-
 ###### Vertical distance ####
 
-model.Travel = lmer(vertTravelDist ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest)
+hist(varOfInterest$vertTravelDist)
+#TODO: interaction poly?
+model.Travelorig = lmer(vertTravelDist ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest)
+model.Travel = lmer(vertTravelDist ~ Ratio*poly(WoA,2) + (1|Pen/HenID), data = varOfInterest)
+model.Travel2 = lmer(vertTravelDist ~ Ratio + Ratio:WoA + poly(WoA,2) + (1|Pen/HenID), data = varOfInterest) 
+#model without full interaction worse
+anova(model.Travelorig, model.Travel)
+anova(model.Travel, model.Travel2)
+null.Travel = lmer(vertTravelDist ~ 1 + (1|Pen/HenID), data = varOfInterest)
 resid.Travel = simulateResiduals(model.Travel, 1000)
-plot(resid.Travel)
+plot(resid.Travel) #deviation okay
 plotResiduals(resid.Travel, form = varOfInterest$Ratio)
 plotResiduals(resid.Travel, form = varOfInterest$WoA)
+anova(model.Travel, null.Travel)
 summary(model.Travel)
 plot(allEffects(model.Travel))
+plot(allEffects(model.Travel2))
+r.squaredGLMM(model.Travel1, null.Travel)
+
+plotData = as.data.table(emmeans(model.Travel, ~ pairwise ~ poly(WoA,2)*Ratio, 
+                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
+                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)))$emmeans)
+
 
 varOfInterest[, PredictTravel := predict(model.Travel)]
+
+ggplot()+ 
+  geom_jitter(data = varOfInterest, aes(x = WoA, y = vertTravelDist), height = 0.02, size = 1, alpha = 0.1)+
+  geom_line(data = plotData, aes(x = WoA, y = emmean, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
+  geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio), alpha = 0.1)+
+  #facet_grid(.~Pen)+
+  theme_classic(base_size = 18)
+
+ggplot(varOfInterest[WoA %in% quantile(WoA),], aes(x = Ratio, y = Similarity)) +
+  geom_point(size=2) + 
+  geom_smooth(data = dataWithin[WoA %in% quantile(WoA), mean(PredictWithin), by = .(WoA, Ratio)], 
+              aes(y =V1), formula = y~x, method = lm, size=1.5, colour = "red") + 
+  theme_classic(base_size = 18)+ 
+  facet_grid(~WoA)+
+  ylab("daily within-individual similarity")
 
 ggplot(varOfInterest, aes(x = Date, y = vertTravelDist, color = RatioSplit)) +
   geom_jitter(size=2) + 
@@ -1045,16 +1200,114 @@ ggplot(data = randomSims, aes(x = as.factor(HenID), y = meanTravel))+
   scale_fill_manual(values = c("red","blue","orange","yellow", "lightblue","white", "gray"))+
   scale_color_manual(values = c("grey", "black"))
 
+
+###### Sleeping spot #####
+
+hist(varOfInterest$onTop)
+hist(varOfInterest[, sum(onTop), by = HenID][,V1])
+model.Sleep = glmer(onTop ~ Ratio*WoA+ (1|Pen/HenID), data = varOfInterest, family = binomial)
+#singularity due to Pen
+model.Sleep = glmer(onTop ~ Ratio*WoA + (1|HenID),  data = varOfInterest, family = binomial)
+null.Sleep = glmer(onTop ~ 1 + (1|HenID),  data = varOfInterest, family = binomial)
+resid.Sleep = simulateResiduals(model.Sleep, 1000)
+plot(resid.Sleep)
+plotResiduals(resid.Sleep, form = varOfInterest$Ratio[!is.na(varOfInterest$onTop)])
+plotResiduals(resid.Sleep, form = varOfInterest$DateID[!is.na(varOfInterest$onTop)])
+anova(model.Sleep, null.Sleep)
+summary(model.Sleep)
+plot(allEffects(model.Sleep))
+r.squaredGLMM(model.Sleep, null.Sleep)
+
+plotData = as.data.table(emmeans(model.Sleep, ~ pairwise ~ WoA*Ratio, 
+                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
+                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)), type = "response")$emmeans)
+
+
+varOfInterest[, PredictSleep:= predict(model.Sleep)]
+
+ggplot()+ 
+  geom_jitter(data = varOfInterest, aes(x = WoA, y = onTop), height = 0.02, size = 1, alpha = 0.1)+
+  geom_line(data = plotData, aes(x = WoA, y = prob, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
+  geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio), alpha = 0.1)+
+  #facet_grid(.~Pen)+
+  theme_classic(base_size = 18)
+
+
+
+###### Nestbox Time #####
+
+hist(as.numeric(varOfInterest$MedTimeNestPure))
+model.Nestorig = lmer(as.numeric(MedTimeNestPure) ~ Ratio*WoA+ (1|Pen/HenID), data = varOfInterest)
+model.Nest = lmer(as.numeric(MedTimeNestPure) ~ Ratio*poly(WoA,2)+ (1|Pen/HenID), data = varOfInterest)
+model.Nest2 = lmer(as.numeric(MedTimeNestPure) ~ Ratio+ Ratio:WoA +poly(WoA,2)+ (1|Pen/HenID), data = varOfInterest)
+test = varOfInterest[Date > as.IDate("2019-11-22"),] #TODO: which model to take?
+model.Nest2 = lmer(as.numeric(MedTimeNestPure) ~ Ratio*WoA+ (1|Pen/HenID), data = test)
+null.Nest = lmer(as.numeric(MedTimeNestPure) ~ 1+ (1|Pen/HenID), data = varOfInterest)
+#model without full interaction worse
+anova(model.Nestorig, model.Nest)
+anova(model.Nest, model.Nest2)
+resid.Nest = simulateResiduals(model.Nest, 1000)
+plot(resid.Nest) 
+plotResiduals(resid.Nest, form = varOfInterest$Ratio[!is.na(varOfInterest$MedTimeNestPure)])
+plotResiduals(resid.Nest, form = varOfInterest$WoA[!is.na(varOfInterest$MedTimeNestPure)]) 
+
+anova(model.Nest, null.Nest)
+summary(model.Nest)
+
+plot(allEffects(model.Nest2))
+r.squaredGLMM(model.Nest, null.Nest)
+
+
+hist(varOfInterest$SwitchesNest) #affected by travel distance cannot be sure if it is in and out of nest or what this is
+model.Nest = glmer(SwitchesNest ~ Ratio*WoA+ (1|Pen/HenID), data = varOfInterest, family = poisson)
+resid.Nest = simulateResiduals(model.Nest, 1000)
+plot(resid.Nest) #TODO: okayish?
+plotResiduals(resid.Nest, form = varOfInterest$Ratio[!is.na(varOfInterest$SwitchesNest)])
+plotResiduals(resid.Nest, form = varOfInterest$WoA[!is.na(varOfInterest$SwitchesNest)])
+summary(model.Nest)
+plot(allEffects(model.Nest))
+
+
+
 ###### Wintergarten ####
 
 #start model
+hist(varOfInterest$Out)
 model.Garten = glmer(Out ~ Ratio*WoA + (1|Pen/HenID), family = binomial, data = varOfInterest)
 resid.Garten = simulateResiduals(model.Garten, 1000)
-plot(resid.Garten)
+plot(resid.Garten)#good
 plotResiduals(resid.Garten, form = varOfInterest$Ratio)
 plotResiduals(resid.Garten, form = varOfInterest$WoA)
 summary(model.Garten)
 plot(allEffects(model.Garten))
+parameters(model.Garten, exp = T)
+plotData = as.data.table(emmeans(model.Garten, ~ pairwise ~ WoA*Ratio, 
+                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
+                                  WoA = c(20, 26, 30, 35, 40, 47, 51, 55)), type = "response")$emmeans)
+
+
+varOfInterest[, PredictGarten:= predict(model.Garten)]
+
+ggplot()+ 
+  geom_jitter(data = varOfInterest, aes(x = WoA, y = Out), height = 0.02, size = 1, alpha = 0.1)+
+  geom_line(data = plotData, aes(x = WoA, y = prob, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
+  geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio), alpha = 0.1)+
+  #facet_grid(.~Pen)+
+  theme_classic(base_size = 18)
+
+
+#model of duration very difficult to fit
+#model of latency equally bad
+# hist(as.numeric(varOfInterest$LatencyGarten))
+# model.Garten = glmer.nb(as.numeric(LatencyGarten) ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest)
+# model.Garten = glmer(as.numeric(LatencyGarten) ~ Ratio*WoA + (1|HenID), family = poisson, data = varOfInterest)
+# resid.Garten = simulateResiduals(model.Garten, 1000)
+# plot(resid.Garten) #okayish
+# plotResiduals(resid.Garten, form = varOfInterest$Ratio)
+# plotResiduals(resid.Garten, form = varOfInterest$WoA)
+# summary(model.Garten)
+# plot(allEffects(model.Garten))
+
 
 varOfInterest[, PredictGarten := predict(model.Garten, type="response")]
 
@@ -1081,15 +1334,52 @@ ggplot(data = varOfInterest[Highlight != "Any",],
   theme_classic(base_size = 18)+
   guides(color = guide_legend(nrow = 4))
 
-###### Nestbox Time #####
-hist(as.numeric(varOfInterest$TimeNest))
-model.Nest = lmer(as.numeric(TimeNest) ~ Ratio*WoA+ (1|Pen/HenID), data = varOfInterest)
-model.Nest = lmer(as.numeric(TimeNest) ~ Ratio*WoA + (1|HenID),  data = varOfInterest)
-resid.Nest = simulateResiduals(model.Nest, 1000)
-plot(resid.Nest)
-plotResiduals(resid.Nest, form = varOfInterest$Ratio[!is.na(varOfInterest$TimeNest)])
-plotResiduals(resid.Nest, form = varOfInterest$DateID[!is.na(varOfInterest$TimeNest)])
-summary(model.Nest)
+
+###### Feed reactivity #####
+
+hist(as.numeric(varOfInterest$FeedReact))
+model.Feed = lmer(FeedReact ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest)
+model.Feed2 = lmer(FeedReact ~ Ratio*WoA + Ratio*MaxZone + MaxZone*WoA+ (1|Pen/HenID), data = varOfInterest)
+model.Feed3 = lmer(FeedReact ~ Ratio*WoA + MaxZone + (1|Pen/HenID), data = varOfInterest)
+anova(model.Feed, model.Feed2)
+anova(model.Feed2, model.Feed3)
+#TODO: Model with maxzone better but informative?? 
+resid.Feed = simulateResiduals(model.Feed, 1000)
+plot(resid.Feed) 
+plotResiduals(resid.Feed, form = varOfInterest$Ratio[!is.na(varOfInterest$FeedReact)])
+plotResiduals(resid.Feed, form = varOfInterest$WoA[!is.na(varOfInterest$FeedReact)])
+plotResiduals(resid.Feed, form = varOfInterest$MaxZone[!is.na(varOfInterest$FeedReact)])
+summary(model.Feed)
+plot(allEffects(model.Feed))
+parameters(model.Feed)
+
+
+hist(varOfInterest$FeedZoneDur)
+model.Feed = lmer(FeedZoneDur ~ Ratio*WoA+ (1|Pen/HenID), data = varOfInterest)
+model.Feed = lmer(FeedZoneDur ~ Ratio*WoA+ (1|HenID), data = varOfInterest)
+resid.Feed = simulateResiduals(model.Feed, 1000)
+plot(resid.Feed) 
+plotResiduals(resid.Feed, form = varOfInterest$Ratio[!is.na(varOfInterest$FeedReact)])
+plotResiduals(resid.Feed, form = varOfInterest$WoA[!is.na(varOfInterest$FeedReact)])
+summary(model.Feed)
+plot(allEffects(model.Feed))
+
+
+plotData = as.data.table(emmeans(model.Feed, ~ pairwise ~ WoA*Ratio, 
+                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
+                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)), type = "response")$emmeans)
+
+
+varOfInterest[, PredictFeedReact:= predict(model.Feed)]
+
+ggplot()+ 
+  geom_jitter(data = varOfInterest, aes(x = WoA, y = FeedReact), height = 0.02, size = 1, alpha = 0.1)+
+  geom_line(data = plotData, aes(x = WoA, y = emmean, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
+  #geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio), alpha = 0.1)+
+  #facet_grid(.~Pen)+
+  theme_classic(base_size = 18)
+
+
 
 
 #### Time series plots #########################
@@ -1166,3 +1456,122 @@ plotData[, Zone := factor(Zone, levels= c("Wintergarten", "Litter", "Tier_2", "R
 #   ggsave(filename = paste0(hens[i],".png"), plot = last_plot(), 
 #          width = 40, height = 18, dpi = 300, units = "cm")
 # }
+
+### Test asnipe Gaussian mixture model approach ####
+
+
+#take out Day and Light indicators from data!
+
+library(asnipe)
+# Generate GMM data
+gmm_data <- gmmevents(time=trackingData[TrueTransition == T, as.numeric(as.ITime(Time))],
+                      identity=trackingData[TrueTransition == T, Hen],
+                      location=trackingData[TrueTransition == T,paste(Date, Zone, sep = "_")],
+                      global_ids=trackingData[, unique(Hen)])
+
+save(gmm_data, file = "gmm_data.Rda")
+# Extract output
+gbi <- as.data.table(gmm_data$gbi)
+events <- as.data.table(gmm_data$metadata)
+observations_per_event <- as.data.table(gmm_data$B)
+
+# Split up location and date data
+events[, Date := tstrsplit(Location, "_", fixed=TRUE, keep=c(1))]
+events[, c("Location1", "Location2") := tstrsplit(Location, "_", fixed=TRUE, keep=c(2,3))]
+events[, Location := ifelse(is.na(Location2),Location1,paste0(Location1,"_", Location2))]
+events[, c("Location1", "Location2") := NULL]
+events[, Date := as.IDate(Date)]
+
+events = tableWoA[events, on = "Date"]
+
+matricesWoA = vector(mode='list', length= length(unique(events$WoA)))
+
+i = 1
+for (woa in unique(events$WoA)){
+  matricesWoA[[i]] = get_network(gbi[which(events$WoA == woa),], data_format="GBI",
+                                 association_index="SRI")
+  i = i+1
+}
+
+
+par(mfrow = c(1,2))
+g1  <- graph.adjacency(matricesWoA[[1]],mode = "undirected", weighted = TRUE, diag = F)
+V(g1)$domIndex <- socialData$Ratio[match(V(g1)$name, paste0("Hen_",as.character(socialData$HenID)))]
+V(g1)$Pen <- socialData$Pen[match(V(g1)$name, paste0("Hen_",as.character(socialData$HenID)))]
+plot(g1, edge.arrow.size=.5, vertex.label.color="black", vertex.label.dist=1.5,
+      vertex.color=c( "pink", "skyblue")[1+(V(g1)$domIndex>0.5)] ) 
+
+g2  <- graph.adjacency(matricesWoA[[32]],mode = "undirected", weighted = TRUE, diag = F)
+V(g2)$domIndex <- socialData$Ratio[match(V(g2)$name, paste0("Hen_",as.character(socialData$HenID)))]
+V(g2)$Pen <- socialData$Pen[match(V(g2)$name, paste0("Hen_",as.character(socialData$HenID)))]
+plot(g2, edge.arrow.size=.5, vertex.label.color="black", vertex.label.dist=1.5,
+     vertex.color=c( "pink", "skyblue")[1+(V(g2)$domIndex>0.5)] ) 
+
+
+meanData = data.table(WoA = unique(events$WoA),
+                      Mean = unlist(lapply(matricesWoA, function(x){ mean(x, na.rm = TRUE)})),
+                      Median = unlist(lapply(matricesWoA, function(x){ median(x, na.rm = TRUE)})),
+                      Max = unlist(lapply(matricesWoA, function(x){ max(x, na.rm = TRUE)})),
+                      SD = unlist(lapply(matricesWoA, function(x){ sd(x, na.rm = TRUE)})),
+                      Q1 =unlist(lapply(matricesWoA, function(x){ quantile(x, 0.25, na.rm = TRUE)})),
+                      Q3 = unlist(lapply(matricesWoA, function(x){ quantile(x, 0.75, na.rm = TRUE)})))
+
+ggplot(meanData, aes(x = WoA))+
+  geom_pointrange(aes(y = Median, ymin = Q1, ymax = Q3))+
+  geom_point(aes(y = Mean), color = "red")+
+  #geom_point(aes(y = Max))+
+  theme_classic(base_size = 18)
+
+
+dataBetween2 = na.omit(rbindlist(lapply(matricesWoA, function(x){as.data.table(as.table(x))})))
+colnames(dataBetween2) = c("Hen1", "Hen2", "Similarity")
+nPairs = length(unique(paste(dataBetween2$Hen1, dataBetween2$Hen2)))
+dataBetween2[, WoA := rep(unique(events$WoA), each = nPairs)]
+dataBetween2 = dataBetween2[Hen1 != Hen2,]
+
+dataBetween2[, Hen1_Pen := socialData$Pen[match(Hen1, socialData$Hen)]]
+dataBetween2[, Hen2_Pen := socialData$Pen[match(Hen2, socialData$Hen)]]
+dataBetween2[, Hen1_Ratio := socialData$Ratio[match(Hen1, socialData$Hen)]]
+dataBetween2[, Hen2_Ratio := socialData$Ratio[match(Hen2, socialData$Hen)]]
+dataBetween2[, PenBool := Hen1_Pen == Hen2_Pen]
+dataBetween2[, DiffRatio := abs(Hen1_Ratio - Hen2_Ratio)]
+
+
+#build Model
+hist(dataBetween2$Similarity)
+
+model.Between = lmer(Similarity ~ DiffRatio*PenBool+ DiffRatio*WoA + (1|Hen1) + (1|Hen2), data = dataBetween2)
+null.Between = lmer(Similarity ~ 1+ (1|Hen1) + (1|Hen2), data = dataBetween2)
+anova(model.Between, null.Between)
+resid.Between = simulateResiduals(model.Between, 1000)
+plot(resid.Between)
+plotResiduals(resid.Between, form = dataBetween2$DiffRatio)
+plotResiduals(resid.Between, form = dataBetween2$PenBool)
+plotResiduals(resid.Between, form = dataBetween2$WoA)
+summary(model.Between)
+parameters(model.Between)
+plot(allEffects(model.Between))
+#variance explained by fixed factors and entire model
+r.squaredGLMM(model.Between, null.Between)
+
+dataBetween2[, PredictSimilarity := predict(model.Between)]
+
+ggplot(dataBetween2[WoA %in% round(quantile(WoA)),], aes(x = DiffRatio, y = Similarity)) +
+  geom_point(size=2) + 
+  geom_smooth(data = dataBetween2[WoA %in% round(quantile(WoA)), mean(PredictSimilarity), by = .(WoA, DiffRatio)], 
+              aes(y =V1), formula = y~x, size=1.5, colour = "red") + 
+  theme_classic(base_size = 18)+ 
+  facet_grid(~WoA)+
+  ylab("daily between-individual similarity")
+
+plotData = as.data.table(emmeans(model.Between, ~ pairwise ~ WoA*DiffRatio, 
+                                 at =  list(DiffRatio = round(quantile(dataBetween2$DiffRatio), digits = 2),
+                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)), type = "response")$emmeans)
+
+ggplot()+ 
+  geom_jitter(data = dataBetween2, aes(x = WoA, y = Similarity), height = 0.02, size = 1, alpha = 0.1)+
+  geom_line(data = plotData, aes(x = WoA, y = emmean, group = DiffRatio,  colour = as.factor(DiffRatio)), size = 1)+
+  #geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio), alpha = 0.1)+
+  #facet_grid(.~Pen)+
+  theme_classic(base_size = 18)
+

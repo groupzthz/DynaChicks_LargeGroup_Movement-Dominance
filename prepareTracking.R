@@ -4,7 +4,7 @@ source("functions.R")
 # input: trackingData = data table containing tracking data
 #        hens         = vector containing relevant animals 
 
-prepareTrackingdata <- function(trackingData, hens){
+prepareTrackingData <- function(trackingData, hens){
 
   #add numerical hen identifier to tracking data
   trackingData[, HenID := unlist(regmatches(Hen, gregexpr('\\(?[0-9,.]+', Hen)))]

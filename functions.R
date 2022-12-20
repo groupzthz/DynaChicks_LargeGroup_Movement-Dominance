@@ -234,6 +234,74 @@ defineDistance = function(zones) {
   return(distance)
 }
 
+### Feed reactivity
+
+# calculates how much hens react to the feeder run, do they spend more time in feeding zones
+# during runs than outside runs
+# input: trackingData
+# output: daily estimate per hen of feed reactivity
+
+feedReactivity = function(trackingData) {
+  
+  # take out first and last run because randomisation plus/minus one hour not possible
+  #run with 1min delay in different pens but noise projected throughout whole barn 
+  #TODO: Take out if hen is in wintergarden during run? 
+  #all relevant runs
+  freshFeed = as_hms(c("03:59:00","05:59:00", "07:59:00", "9:59:00", "12:59:00", "14:59:00"))
+  freshFeed = rbindlist(lapply(freshFeed, function(x){data.table(Time = as_hms(seq(x, x+300)))}))
+  
+  
+  splitHen = splitHenData(trackingData)
+  days = unique(trackingData$Date)
+  dailyFeed = data.table(Date = days)
+  fullFeed = rbindlist(lapply(days, function(x){data.table(Time = ymd_hms(paste(x, as.character(freshFeed$Time))))}))
+  fullFeed[, Run := rep(1:6, each = 301, times = length(days))]
+  fullFeed[, Obs := rep(1:(length(days)*6), each = 301)]
+  
+  # randomisation standardised across hens
+  # to randomise 50 times around the time point
+  # minimum plus/minus 20 min -> 1200 s 
+  # maximum plus/minus 60 min -> 3600s,
+  randomSelect = matrix(nrow = 50, ncol = max(fullFeed$Obs))
+  randomSelect = apply(randomSelect, 2, function(x){x = sample(c(-3600:-1200, 1200:3600), 50)})
+  
+  for (i in 1:length(splitHen)){
+    #create full time series with all seconds of target hen
+    cat("Working on hen", i,"\n")
+    fullHen = mergeHenData(fillSeqHenData(splitHen[[i]]))
+    # extract only the seconds during feed runs
+    joinFeed = fullHen[fullFeed, on = "Time"]
+    joinFeed[, Date := as.IDate(Time)]
+    #delete those feed runs at 4 where the light did not go on at 2
+    joinFeed = joinFeed[!(Date < as.IDate("2019-11-22") & Run == 1),]
+    #calculate the duration in the feed zone during feed runs
+    DurFeedZone = joinFeed[, .(Duration = sum(Zone == "Tier_4" | Zone == "Tier_2")), by = .(Date, Run, Obs)]
+    
+    #calculate duration in feed zone outside of feed runs 50 times randomised around the time point of the run
+    for (j in 1:50){
+      #plus/minus to the time by Obs
+      fullFeed[, randTime := Time + randomSelect[j,Obs], by = Obs] 
+      # extract only the seconds during feed runs
+      joinFeedRand = fullHen[fullFeed, on = .(Time == randTime)]
+      joinFeedRand[, Date := as.IDate(Time)]
+      #delete those feed runs at 4 where the light did not go on at 2
+      joinFeedRand = joinFeedRand[!(Date < as.IDate("2019-11-22") & Run == 1),]
+      #calculate the duration in the feed zone outside feed runs
+      duration = joinFeedRand[, .(Duration = sum(Zone == "Tier_4" | Zone == "Tier_2")), by = .(Date, Run, Obs)][, Duration]
+      name = paste0("Eval_", j)
+      DurFeedZone[, (name) := (Duration-duration)/(Duration+duration)]
+    }
+    DurFeedZone[, Total := rowSums(.SD, na.rm = T)/50 , .SDcols = grep("Eval", colnames(DurFeedZone))]
+    name = unique(fullHen$Hen)
+    dailyFeed[, (name) := DurFeedZone[, mean(Total, na.rm = T), by = Date][,V1]]
+    
+  }
+  return(dailyFeed)
+  
+}
+
+
+
 ### Sequence similarity
 
 #calculates similarity of movement sequences between individuals 
@@ -249,11 +317,11 @@ similarityBetween = function(data, zone = F, interval = "day"){
   for (i in 1:length(splitDate)){
     splitHen[[i]] = splitHenData(splitDate[[i]])
     if(interval == "day"){
-      start = splitHen[[i]][[1]][TrueTransition == F & DayIndic == F,as.character(as.ITime(Time))][1]
-      end = splitHen[[i]][[1]][TrueTransition == F & DayIndic == F,as.character(as.ITime(Time))][2]
+      start = splitHen[[i]][[1]][LightIndic == T,as.character(as.ITime(Time))][1]
+      end = splitHen[[i]][[1]][LightIndic == T,as.character(as.ITime(Time))][2]
     }
     else if(interval == "morning"){
-      start = splitHen[[i]][[2]][TrueTransition == F & DayIndic == F,as.character(as.ITime(Time))][1]
+      start = splitHen[[i]][[2]][LightIndic == T,as.character(as.ITime(Time))][1]
       end = "09:00:00"
     }
     for (j in 1: length(splitHen[[i]])){
