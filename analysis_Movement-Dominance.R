@@ -127,6 +127,8 @@ dataIndex = dataIndex[order(Ratio),]
 socialData = combData[dataIndex, on = "ID"]
 socialData[, Hen := paste0("Hen_", HenID)]
 
+socialData[,ID := factor(ID, levels = ID)]
+
 ggplot(data = socialData, aes(x = ID, y = Ratio, colour = as.factor(Pen)))+ 
   geom_point(size = 6)+
   geom_hline(yintercept= 0.5, linetype='dashed')+
@@ -147,6 +149,7 @@ ggplot(data = henData, aes(x = Comb, y = Ratio))+
   geom_point(aes(colour = as.factor(Pen)),size = 6)+
   geom_hline(yintercept= 0.5, linetype='dashed')+
   geom_smooth(method = 'lm', size = 1.5, colour= 'red')+
+  facet_grid(~Pen)
   theme_classic(base_size = 18)+
   labs(title = 'Visual signalling', x = 'Comb Size', y = "Dominance ratio")
 
@@ -189,11 +192,12 @@ plotResiduals(resid.Comb, form = henData$Comb)
 summary(model.Comb)
 anova(model.Comb, null.Comb)
 parameters(model.Comb)
+r.squaredGLMM(model.Comb, null.Comb)
 
 henData[, PredictRatio:= predict(model.Comb)]
 ggplot(data = henData, aes(y = Ratio, x = Comb, ))+ 
   geom_point(aes(colour = as.factor(Pen)), size = 3)+
-  geom_line(aes(y = PredictRatio, colour = as.factor(Pen)))+
+  geom_line(aes(y = PredictRatio, colour = as.factor(Pen)), size = 1.5)+
   #facet_grid(.~Pen)+
   theme_classic(base_size = 18)
 
@@ -201,12 +205,13 @@ ggplot(data = henData, aes(y = Ratio, x = Comb, ))+
 
 
 #weight gain
-ggplot(data = henDataLong, aes(x = as.factor(WoA), y = weight))+ 
+ggplot(data = henDataLong, aes(x = WoA, y = weight, colour = Ratio))+ 
   # geom_violin()+
-  geom_point(size = 6, aes(colour = Ratio))+
+  geom_point(size = 3)+
   geom_line(aes(group = ID))+
   theme_classic(base_size = 18)+
-  labs(title = 'Visual signalling', x = 'WoA', y = "Weight")
+  labs(title = 'Visual signalling', x = 'WoA', y = "Weight")+
+  scale_color_gradient(low = "blue", high = "gold")
 
 henData[, gain := weight_55-weight_20]
 
@@ -253,7 +258,7 @@ emtrends(model.Weight, ~WoA*Ratio)
 
 
 library(emmeans)
-plotData = as.data.table(emmeans(model.Weight, ~ pairwise ~ WoA*Ratio, at =  list(Ratio = quantile(henDataLong$Ratio),
+plotData = as.data.table(emmeans(model.Weight, ~ pairwise ~ WoA*Ratio, at =  list(Ratio = round(quantile(henDataLong$Ratio), digits = 2),
                                                          WoA = c(20, 26, 30, 35, 40, 47, 51, 55)))$emmeans)
 
 henDataLong[, PredictWeight:= predict(model.Weight)]
@@ -280,13 +285,15 @@ ggplot(data = henData, aes(y = KBF_55, x = Ratio))+
   labs(title = 'Health & Dominance', y = 'KBF Severity', x = "Dominance ratio")
 
 #KBF development
-ggplot(data = henDataLong, aes(x = as.factor(WoA), y = Severity))+ 
+ggplot(data = henDataLong, aes(x = WoA, y = Severity, colour = Ratio))+ 
   # geom_violin()+
-  geom_point(size = 6, aes(colour = Ratio))+
-  geom_text(aes(label = ID),hjust=1, vjust=1)+
+  geom_point(size = 3)+
+  #geom_text(aes(label = ID),hjust=1, vjust=1)+
   geom_line(aes(group = ID))+
   theme_classic(base_size = 18)+
-  labs(x = 'WoA', y = "KBF Severity")
+  labs(x = 'WoA', y = "KBF Severity")+
+  scale_color_gradient(low = "blue", high = "gold")
+
 #two lowest ranking hens with really low severity -> not laying???
 
 model.KBF = lmer(Severity ~ Ratio*WoA +(1|Pen), data = henDataLong)
@@ -313,13 +320,14 @@ ggplot(data = henData, aes(y = feathers_55, x = Ratio, colour = Pen))+
   labs(y = 'Feather cover', x = "Dominance ratio")
 
 #feather development
-ggplot(data = henDataLong, aes(x = as.factor(WoA), y = feathers))+ 
+ggplot(data = henDataLong, aes(x = WoA, y = feathers,colour = Ratio))+ 
   # geom_violin()+
-  geom_point(size = 6, aes(colour = Ratio))+
+  geom_point(size = 3)+
   #geom_text(aes(label = ID),hjust=1, vjust=1)+
   geom_line(aes(group = ID))+
   theme_classic(base_size = 18)+
-  labs(title = 'Visual signalling', x = 'WoA', y = "Feather loss")
+  labs( x = 'WoA', y = "Feather loss")+
+  scale_color_gradient(low = "blue", high = "gold")
 
 model.Feathers = glmer.nb(feathers ~ Ratio + Ratio:WoA+ poly(WoA,2) +(1|Pen), data = henDataLong) 
 null.Feathers =  glmer.nb(feathers ~ 1 +(1|Pen), data = henDataLong)
@@ -692,10 +700,11 @@ p = (sum(betaTableWithin[Run != "Orig", `Ratio:WoA`] <= betaTableWithin[Run == "
 
 dataWithin[, PredictWithin := predict(model.Within)]
 
-ggplot(dataWithin, aes(x = Date, y = Similarity, color = RatioSplit)) +
+ggplot(dataWithin, aes(x = Date, y = Similarity, color = Ratio)) +
   geom_jitter(size=2) + 
-  geom_line(data = dataWithin[, mean(PredictWithin), by = .(Date, RatioSplit)], 
-            aes(x = Date, y =V1, colour = RatioSplit),size=1.5) + 
+  geom_smooth(aes(group = Hen), se = F)+
+  #geom_line(data = dataWithin[, mean(PredictWithin), by = .(Date, RatioSplit)], 
+  #          aes(x = Date, y =V1, colour = RatioSplit),size=1.5) + 
   theme_classic(base_size = 18)+ 
   ylab("daily within-individual similarity")#+ 
 
@@ -841,8 +850,12 @@ dailyNest[NestZone == 1, MedTimeNest := EntryNest + MedDurNest]
 #switches in and out of the nestbox zone
 helper = trackingData[Light == T & hour(Time) < 9 & Zone == "Ramp_Nestbox" & LightIndic != 1, .(SwitchesNest = .N),by = .(HenID, Date)]
 dailyNest = helper[dailyNest, on = c("HenID", "Date")]
-#TODO: through out switches with only x duration
+helper = dailyNest[, .(HenID, Date, MedTimeNest)][trackingData, on = c("HenID", "Date")][Time < MedTimeNest & Time > (MedTimeNest -(3600)),]
+helper[, nextZone := c(distZone[-1], NA), by = HenID]
+#calculate distance travelled by using function defineDistance
+helper[, distVertical := apply(X = cbind(distZone, nextZone), MARGIN = 1, FUN= defineDistance), by = HenID]
 
+dailyNest = helper[,.(preNestDist = sum(distVertical)),by = .(HenID, Date)][dailyNest, on = c("HenID", "Date")]
 
 ###### Feeder reactivity #######
 #Feeder runs: (ab 22.11.: 2:00), 4:00, 6:00, 8:00, 10:00, 13:00, 15:00, 16:15
@@ -891,6 +904,7 @@ varOfInterest = dailyFeedL[varOfInterest, on = c(HenID = "HenID", Date = "Date")
 #add social information (dominance index)
 varOfInterest = socialData[, .(HenID,Ratio,Comb)][varOfInterest, on = "HenID"] 
 
+varOfInterest = henDataLong[, .(HenID,Severity,WoA)][varOfInterest, on = c("HenID", "WoA")] 
 
 ##### Parameter inspection plots ####
 
@@ -916,8 +930,12 @@ ggplot(trackingData[Light == T, .(Duration = sum(Duration)), by = .(HenID, Zone)
   scale_fill_gradient(low = "white", high = "red")
 
 #heatmap of durations by ratio (hens sorted) by WoA
-ggplot(trackingData[Light == T, .(Duration = sum(Duration)), by = .(HenID, Zone, WoA)][WoA %in% quantile(WoA),], aes(x = Zone, y = factor(HenID, levels = socialData$HenID))) +
-  geom_tile(aes(fill = Duration), colour = "white") +
+plot = trackingData[, .(nDays = length(unique(Date))), by = .(HenID, WoA)][
+  trackingData[Light == T, .(Duration = sum(Duration)), by = .(HenID, Zone, WoA)][WoA %in% quantile(WoA),], 
+  on = .(HenID, WoA)]
+plot[, dailyDuration := Duration/nDays]
+ggplot(plot, aes(x = Zone, y = factor(HenID, levels = socialData$HenID))) +
+  geom_tile(aes(fill = dailyDuration), colour = "white") +
   scale_fill_gradient(low = "white", high = "red")+
   facet_grid(.~WoA)
 
@@ -932,6 +950,11 @@ ggplot(varOfInterest, aes(x = Date, y = factor(MaxZone, levels = c("Wintergarten
   geom_smooth(aes(group = as.factor(HenID)),se = F)+
   scale_colour_manual(values = c("grey", "red", "blue"))
 
+#Litter by Ratio
+ggplot(varOfInterest, aes(x = Date, y = Litter, colour = Ratio))+
+  geom_jitter(width = 0.1)+
+  geom_smooth(aes(group = as.factor(HenID)),se = F)+
+  scale_color_gradient(low = "blue", high = "gold")
 
 ###### travel distance #### 
 hist(varOfInterest$vertTravelDist)
@@ -942,7 +965,14 @@ ggplot(varOfInterest, aes(x = Date, y = vertTravelDist, colour = Highlight))+
   scale_colour_manual(values = c("grey", "red", "blue"))
 ggplot(varOfInterest, aes(x = Date, y = vertTravelDist, colour = Ratio))+
   geom_point()+
-  geom_smooth(aes(group = as.factor(HenID)),se = F)
+  geom_smooth(aes(group = as.factor(HenID)),se = F)+
+  scale_color_gradient(low = "blue", high = "gold")
+
+#compared to simple transition counts
+ggplot(socialData[, .(HenID,Ratio,Comb)][trackingData[, .N, by = .(HenID,Date)], on = "HenID"], aes(x = Date, y = N, colour = Ratio))+
+  geom_point()+
+  geom_smooth(aes(group = as.factor(HenID)),se = F)+
+  scale_color_gradient(low = "blue", high = "gold")
 
 ###### sleeping spot ####
 
@@ -957,25 +987,32 @@ ggplot(varOfInterest[, .(Duration = sum(DurationNight)), by = .(HenID, ZoneSleep
   geom_tile(aes(fill = Duration), colour = "white") +
   scale_fill_gradient(low = "white", high = "red")
 #progression of most common sleeping spot on Top or not
-ggplot(varOfInterest, aes(x = Date, y = onTop, colour = Highlight))+
+ggplot(varOfInterest, aes(x = Date, y = onTop, colour = Ratio))+
   geom_point()+
   geom_smooth(aes(group = HenID),method = "glm", 
               method.args = list(family = "binomial"),se = F)+
-  scale_colour_manual(values = c("grey", "red", "blue"))
+  scale_color_gradient(low = "blue", high = "gold")
 # time spent on top during day
-ggplot(varOfInterest, aes(x = Date, y = generalTop, colour = Highlight))+
+ggplot(varOfInterest, aes(x = Date, y = Tier_4, colour = Ratio))+
   geom_point()+
   geom_smooth(aes(group = HenID),se = F)+
-  scale_colour_manual(values = c("grey", "red", "blue"))
-ggplot(varOfInterest, aes(x = Date, y = generalTop, colour = Ratio))+
+  scale_color_gradient(low = "blue", high = "gold")
+#time spent on top and KBF
+ggplot(varOfInterest, aes(x = Date, y = Tier_4, colour = Severity))+
   geom_point()+
-  geom_smooth(aes(group = HenID),se = F)
+  geom_smooth(aes(group = HenID),se = F)+
+  scale_color_gradient(low = "blue", high = "gold")
+ggplot(varOfInterest[!is.na(Severity),], aes(x = Severity, y = Tier_4, colour = Ratio))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  facet_grid(~WoA)
+  scale_color_gradient(low = "blue", high = "gold")
 #relation between time spent on top during day and sleeping spot
-ggplot(varOfInterest, aes(x = Tier_4, y = onTop, colour = Highlight))+
+ggplot(varOfInterest, aes(x = Tier_4, y = onTop, colour = Ratio))+
   geom_point()+
   geom_smooth(color = "red", method = "glm", 
               method.args = list(family = "binomial"))+
-  scale_colour_manual(values = c("grey", "red", "blue"))
+  scale_color_gradient(low = "blue", high = "gold")
 
 
 ###### Wintergarden ####
@@ -983,27 +1020,27 @@ ggplot(varOfInterest, aes(x = Tier_4, y = onTop, colour = Highlight))+
 #Went out or not?
 hist(varOfInterest$Out)
 hist(varOfInterest[, sum(Out), by = HenID][,V1])
-ggplot(varOfInterest, aes(x = WoA, y = Out, colour = Highlight))+
+ggplot(varOfInterest, aes(x = WoA, y = Out, colour = Ratio))+
   geom_point()+
   geom_smooth(aes(group = HenID),method = "glm", 
               method.args = list(family = "binomial"),se = F)+
-  scale_colour_manual(values = c("grey", "red", "blue"))
+  scale_color_gradient(low = "blue", high = "gold")
 
 #latency to enter
 hist(as.numeric(varOfInterest$LatencyGarten))
 #progression of latency to enter the garden over days
-ggplot(varOfInterest, aes(x = Date, y = as.numeric(LatencyGarten), colour = Highlight))+
+ggplot(varOfInterest, aes(x = Date, y = as.numeric(LatencyGarten), colour = Ratio))+
   geom_point()+
-  geom_smooth(data = varOfInterest[Highlight != "Any",], aes(group = HenID),se = F)+
-  scale_colour_manual(values = c("grey", "red", "blue"))
+  geom_smooth(aes(group = HenID),se = F)+
+  scale_color_gradient(low = "blue", high = "gold")
 
 #duration in the wintergarten
 hist(as.numeric(varOfInterest$DurationGarten))
 #progression of latency to enter the garden over days
-ggplot(varOfInterest, aes(x = Date, y = as.numeric(DurationGarten), colour = Highlight))+
+ggplot(varOfInterest, aes(x = Date, y = as.numeric(DurationGarten), colour = Ratio))+
   geom_point()+
   geom_smooth(aes(group = HenID),se = F)+
-  scale_colour_manual(values = c("grey", "red", "blue"))
+  scale_color_gradient(low = "blue", high = "gold")
 
 ###### Nestbox zone ####
 
@@ -1023,38 +1060,57 @@ ggplot(varOfInterest, aes(x = Date, y = NestZone, colour = Highlight))+
 
 hist(as.numeric(varOfInterest$MedTimeNestPure))
 #progression of time to enter the nestbox over days
-ggplot(varOfInterest, aes(x = Date, y = as.numeric(MedTimeNestPure), colour = Highlight))+
+ggplot(varOfInterest, aes(x = Date, y = as.numeric(MedTimeNestPure), colour = Ratio))+
   geom_point()+
   geom_smooth(aes(group = HenID),se = F)+
-  scale_colour_manual(values = c("grey", "red", "blue"))
+  scale_color_gradient(low = "blue", high = "gold")
 
 
 #duration in the nestbox zone
 hist(as.numeric(varOfInterest$DurationNest))
 #progression of duration in nestbox over days
-ggplot(varOfInterest, aes(x = Date, y = as.numeric(DurationNest), colour = Highlight))+
+ggplot(varOfInterest, aes(x = Date, y = as.numeric(DurationNest), colour = Ratio))+
   geom_point()+
   geom_smooth(aes(group = HenID),se = F)+
-  scale_colour_manual(values = c("grey", "red", "blue"))
+  scale_color_gradient(low = "blue", high = "gold")
 
 #switches into nestbox zone
+hist(varOfInterest$preNestDist)
 hist(varOfInterest$SwitchesNest)
+#which variable is better fitting?
+ggplot(varOfInterest, aes( x= preNestDist, y = SwitchesNest))+
+  geom_point()+
+  geom_smooth()
+cor.test(varOfInterest$preNestDist, varOfInterest$SwitchesNest)
+
 #progression of duration in nestbox over days
-ggplot(varOfInterest, aes(x = Date, y = SwitchesNest, colour = Highlight))+
+ggplot(varOfInterest, aes(x = Date, y = SwitchesNest, colour = Ratio))+
   geom_point()+
   geom_smooth(aes(group = HenID),se = F)+
-  scale_colour_manual(values = c("grey", "red", "blue"))
+  scale_color_gradient(low = "blue", high = "gold")
+
+ggplot(varOfInterest, aes(x = Date, y = preNestDist, colour = Ratio))+
+  geom_point()+
+  geom_smooth(aes(group = HenID),se = F)+
+  scale_color_gradient(low = "blue", high = "gold")
+
 
 
 
 ###### Feed reactivity ####
 
 hist(varOfInterest$FeedReact)
+ggplot(varOfInterest[WoA %in% quantile(WoA),], aes(x = FeedReact, fill = Highlight))+
+  geom_density(alpha = 0.5, position = "identity")+
+  facet_grid(~ WoA)
+ggplot(varOfInterest[WoA %in% quantile(WoA),], aes(x = FeedReact, fill = RatioSplit))+
+  geom_density(alpha = 0.5, position = "identity")+
+  facet_grid(~ WoA)  
 #feed reactivity over days
-ggplot(varOfInterest, aes(x = Date, y = FeedReact, colour = Highlight))+
+ggplot(varOfInterest, aes(x = Date, y = FeedReact, colour = Ratio))+
   geom_point()+
   geom_smooth(aes(group = as.factor(HenID)),se = F)+
-  scale_colour_manual(values = c("grey", "red", "blue"))
+  scale_color_gradient(low = "blue", high = "gold")
 #total time in feeding zone by ratio
 ggplot(varOfInterest, aes(x = Date, y = FeedZoneDur, colour = Ratio))+
   geom_point()+
@@ -1071,13 +1127,16 @@ ggplot(varOfInterest, aes(x = FeedZoneDur, y = FeedReact, colour = Ratio))+
   geom_smooth(colour = "red",se = T)
 ggplot(varOfInterest, aes(x = FeedZone4, y = FeedReact, colour = Ratio))+
   geom_point()+
-  geom_smooth(colour = "red",se = T)
+  geom_smooth(colour = "red",se = T)+
+scale_color_gradient(low = "blue", high = "gold")
 ggplot(varOfInterest, aes(x = FeedZone2, y = FeedReact, colour = Ratio))+
   geom_point()+
-  geom_smooth(colour = "red",se = T)
+  geom_smooth(colour = "red",se = T)+
+scale_color_gradient(low = "blue", high = "gold")
 ggplot(varOfInterest, aes(x = FeedZone2, y = FeedZone4, colour = Ratio))+
   geom_point()+
-  geom_smooth(colour = "red",se = T)
+  geom_smooth(colour = "red",se = T)+
+  scale_color_gradient(low = "blue", high = "gold")
 
 
 #TODO: take out outliers
@@ -1384,20 +1443,19 @@ ggplot()+
 
 #### Time series plots #########################
 #relevant times
-times = list(ymd_hms(c("2019-11-12 03:30:00", "2019-11-12 17:30:00")),
-             ymd_hms(c("2019-11-21 03:30:00", "2019-11-21 17:30:00")),
-             ymd_hms(c("2019-11-30 02:30:00", "2019-11-30 17:30:00")),
-             ymd_hms(c("2019-12-08 02:30:00", "2019-12-08 17:30:00")),
-             ymd_hms(c("2019-12-20 02:30:00", "2019-12-20 17:30:00")))
+times = list(ymd_hms(c("2019-11-10 04:00:00", "2019-11-10 17:30:00")),
+             ymd_hms(c("2020-01-10 02:00:00", "2020-01-10 17:30:00")),
+             ymd_hms(c("2020-03-13 02:00:00", "2020-03-13 17:30:00")),
+             ymd_hms(c("2020-05-08 02:00:00", "2020-05-08 17:30:00")),
+             ymd_hms(c("2020-06-26 02:00:00", "2020-06-26 17:30:00")))
 
 hen_list <- vector(mode='list', length=length(hens))
-j = 1
-for (hen in hens) {
+splitHen = splitHenData(trackingData)
+for (j in 1:length(hens)) {
   hen_list[[j]] <- vector(mode='list', length=5)
   for (i in 1:5){
-    hen_list[[j]][[i]] = extractInterval(splitHen[[hen]], times[[i]][1], times[[i]][2])
+    hen_list[[j]][[i]] = extractInterval(splitHen[[j]], times[[i]][1], times[[i]][2])
   }
-  j= j+1
 } 
 
 
