@@ -88,8 +88,8 @@ prepareTrackingData <- function(trackingData, hens){
         }
         #inserting the lights on stamp
         if(start == F){
-          #use first indication of lights as index
-          indexStart = which(relDat$Light == T)[1]
+          #use first time stamp after lights on as index
+          indexStart = which(relDat$Time > ymd_hms(paste(as.IDate(relDat$Time[1]), dayStart)))[1]
           startEntry = relDat[indexStart-1,]
           startEntry[, Time := ymd_hms(paste(day, dayStart))]
           startEntry[, Light := T]

@@ -300,7 +300,47 @@ feedReactivity = function(trackingData) {
   
 }
 
+infeedZone = function(trackingData) {
+  
+  # is hen in any of the two feeder zones during the run and if so in which?
+  #run with 1min delay in different pens but noise projected throughout whole barn 
+  #all relevant runs
+  freshFeed = as_hms(c("01:59:00","03:59:00","05:59:00", "07:59:00", "9:59:00", "12:59:00", "14:59:00", "16:14:00"))
+  freshFeed = rbindlist(lapply(freshFeed, function(x){data.table(Time = as_hms(seq(x, x+300)))}))
+  
+  #split data by hen
+  splitHen = splitHenData(trackingData)
+  days = unique(trackingData$Date)
+  #create empty frame for data
+  dailyFeed = data.table()
+  #create list with feeding events
+  fullFeed = rbindlist(lapply(days, function(x){data.table(Time = ymd_hms(paste(x, as.character(freshFeed$Time))))}))
+  #create identifiers for each feeder run time
+  fullFeed[, Run := rep(1:8, each = 301, times = length(days))]
+  fullFeed[, Obs := rep(1:(length(days)*8), each = 301)]
+  #delete all feeder runs before the 21.11. at 2 am
+  fullFeed = fullFeed[!(hour(Time) < 3 & day(Time) <21 & month(Time) == 11),]
 
+  for (i in 1:length(splitHen)){
+    #create full time series with all seconds of target hen
+    cat("Working on hen", i,"\n")
+    fullHen = mergeHenData(fillSeqHenData(splitHen[[i]]))
+    # extract only the seconds during feed runs
+    joinFeed = fullHen[fullFeed, on = "Time"]
+    joinFeed[, Date := as.IDate(Time)]
+    #calculate the duration in the feed zone during feed runs
+    DurFeedZone = joinFeed[, .(Duration2 = sum(Zone == "Tier_2"),
+                               Duration4 = sum(Zone == "Tier_4")), by = .(Date, Run, Obs)]
+    name = unique(fullHen$Hen)
+    dailyFeed = rbind(dailyFeed, DurFeedZone[, .(Total2 = sum(Duration2),
+                                      Total4 = sum(Duration4),
+                                      Runs = length(Run),
+                                      Hen = name), by= Date][,NotFeedZone := Runs*301-(Total2+Total4), by = Date])
+    
+  }
+  return(dailyFeed)
+
+}
 
 ### Sequence similarity
 
@@ -403,3 +443,36 @@ similarityWithin = function(data, interval = "day"){
 #3. control for unlikely transitions
 #4. change also timepoint of transition?
 #5. what if bird stays on the same zone 
+
+
+#function to plot specific days for a specific hen 
+# input: trackingData, hen ID (string), days
+# output: ggplot object to plot the time series on the indicated days
+
+plotTimeSeries = function(trackingData, henID, days){
+    
+  plotData = trackingData[Hen == henID & Date %in% as.IDate(days) & (Light == T | LightIndic == T)]  
+  plotData[, Time_x := as_hms(Time)]
+  plotData[, Zone := factor(Zone, levels= c("Wintergarten", "Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
+  ggplot(plotData, aes(x = Time_x, y = Zone)) + 
+    geom_step(group = 1) + 
+    geom_point() + 
+    facet_grid(Date~.)+
+    labs(x = "time", y = "Zones") +
+    ggtitle(henID)
+}
+
+
+#make overview plots per hen
+# for (i in 1:length(hens)){
+#   plotData = mergeHenData(hen_list[[i]])
+#   plotData[, Date := as.factor(as_date(Time))]
+#   
+#   
+#   #scale_x_discrete(labels = x_times) + 
+#   #theme(axis.ticks = element_blank(), axis.text.y = element_text(size = 6))+
+#   #scale_y_discrete(labels = c("WG", "1", "2", "3", "4"))
+#   
+#   ggsave(filename = paste0(hens[i],".png"), plot = last_plot(), 
+#          width = 18, height = 20, dpi = 300, units = "cm")
+# }
