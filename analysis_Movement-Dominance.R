@@ -213,15 +213,30 @@ henDataLong[, mean(weight), by = WoA]
 henDataLong[Ratio < 0.17 , max(weight), by = ID][,mean(V1)]
 henDataLong[Ratio > 0.7 , max(weight), by = ID][,mean(V1)]
 
+#splitting dominance index by 0.5
+henDataLong[, RatioSplit := "Dom"]
+henDataLong[Ratio < 0.5, RatioSplit := "Sub"]
 #weight gain
 ggplot(data = henDataLong, aes(x = WoA, y = weight))+ 
   # geom_violin()+
   geom_point(aes(colour = Ratio), size = 3)+
   geom_line(aes(group = ID, colour = Ratio))+
-  geom_line(data = henDataLong[, .(meanW = mean(weight)), by = WoA], aes(y = meanW), size = 1.5, "-")+
+  geom_line(data = henDataLong[, .(meanW = mean(weight)), by = WoA], aes(y = meanW), size = 1.5)+
   theme_classic(base_size = 18)+
   labs(title = 'Visual signalling', x = 'WoA', y = "Weight")+
   scale_color_gradient(low = "blue", high = "gold")
+
+#weight gain
+ggplot(data = henDataLong, aes(x = WoA, y = weight))+ 
+  # geom_violin()+
+  geom_point(aes(colour = Ratio), size = 3)+
+  #geom_line(aes(group = ID, colour = Ratio))+
+  geom_line(data = henDataLong[RatioSplit == "Dom", .(meanW = mean(weight)), by = WoA], aes(y = meanW), size = 1.5)+
+  geom_line(data = henDataLong[RatioSplit == "Sub", .(meanW = mean(weight)), by = WoA], aes(y = meanW), size = 1.5, linetype = "dashed")+
+  theme_classic(base_size = 18)+
+  labs(x = 'WoA', y = "Weight")+
+  scale_color_gradient(low = "blue", high = "gold")
+
 
 henData[, gain := weight_55-weight_20]
 
@@ -306,6 +321,19 @@ ggplot(data = henDataLong, aes(x = WoA, y = Severity, colour = Ratio))+
   labs(x = 'WoA', y = "KBF Severity")+
   scale_color_gradient(low = "blue", high = "gold")
 
+
+ggplot(data = henDataLong, aes(x = WoA, y = Severity))+ 
+  # geom_violin()+
+  geom_point(aes(colour = Ratio), size = 3)+
+  #geom_line(aes(group = ID, colour = Ratio))+
+  geom_line(data = henDataLong[RatioSplit == "Dom", .(meanKBF = mean(Severity)), by = WoA], aes(y = meanKBF), size = 1.5)+
+  geom_line(data = henDataLong[RatioSplit == "Sub", .(meanKBF = mean(Severity)), by = WoA], aes(y = meanKBF), size = 1.5, linetype = "dashed")+
+  theme_classic(base_size = 18)+
+  labs(x = 'WoA', y = "KBF severity")+
+  scale_color_gradient(low = "blue", high = "gold")
+
+
+
 #two lowest ranking hens with really low severity -> not laying???
 
 hist(henDataLong$Severity) #normal but with a lot of zeros
@@ -356,6 +384,17 @@ ggplot(data = henDataLong, aes(x = WoA, y = feathers,colour = Ratio))+
   theme_classic(base_size = 18)+
   labs( x = 'WoA', y = "Feather loss")+
   scale_color_gradient(low = "blue", high = "gold")
+
+ggplot(data = henDataLong, aes(x = WoA, y = feathers))+ 
+  # geom_violin()+
+  geom_point(aes(colour = Ratio), size = 3)+
+  #geom_line(aes(group = ID, colour = Ratio))+
+  geom_line(data = henDataLong[RatioSplit == "Dom", .(meanKBF = mean(feathers)), by = WoA], aes(y = meanKBF), size = 1.5)+
+  geom_line(data = henDataLong[RatioSplit == "Sub", .(meanKBF = mean(feathers)), by = WoA], aes(y = meanKBF), size = 1.5, linetype = "dashed")+
+  theme_classic(base_size = 18)+
+  labs(x = 'WoA', y = "KBF severity")+
+  scale_color_gradient(low = "blue", high = "gold")
+
 
 hist(henDataLong$feathers) 
 model.Feathers = glmer(feathers ~ Ratio*WoA+(1|Pen), data = henDataLong, family = poisson)
@@ -469,7 +508,6 @@ trackingData[, distVertical := apply(X = cbind(distZone, nextZone), MARGIN = 1, 
 
 ###### Nestbox zone ########
 #Nestbox entries per bird
-#TODO: exclude hens which sleep in zone
 #sift out only those in the morning, relevant for egg laying not resting (until 9)
 #extract if hen was in nest zone on day or not
 dailyNest = trackingData[Light == T & hour(Time) < 9, .(NestZone = ifelse(any(Zone == "Ramp_Nestbox"), 1, 0)), by = .(HenID, Date)][order(Date, HenID)]
@@ -523,6 +561,8 @@ colnames(dailySleep)[3] = "ZoneSleep"
 
 ###### Feeder reactivity #######
 #Feeder runs: (ab 22.11.: 2:00), 4:00, 6:00, 8:00, 10:00, 13:00, 15:00, 16:15
+#TODO: check if correct for tier 4 outcome looks kind of weird...
+
 
 dailyFeed = infeedZone(trackingData)
 colnames(dailyFeed)[2] = "DurationFeed2"
@@ -609,8 +649,9 @@ ggplot(plot, aes(x = Zone, y = factor(HenID, levels = socialData$HenID))) +
 #most common zone daily
 ggplot(varOfInterest, aes(x = Date, y = factor(MaxZone, levels = c("Wintergarten","Litter", "Tier_2", "Ramp_Nestbox", "Tier_4")), colour = Ratio))+
   geom_jitter(width = 0.1)+
-  geom_smooth(aes(group = as.factor(HenID)),se = F)+
-  scale_color_gradient(low = "blue", high = "gold")
+  #geom_smooth(aes(group = as.factor(HenID)),se = F)+
+  scale_color_gradient(low = "blue", high = "gold")+
+  theme_classic(base_size = 18)
 
 ggplot(varOfInterest, aes(x = Date, y = factor(MaxZone, levels = c("Wintergarten","Litter", "Tier_2", "Ramp_Nestbox", "Tier_4")), colour = Highlight))+
   geom_jitter()+
@@ -622,6 +663,38 @@ ggplot(varOfInterest, aes(x = Date, y = Litter, colour = Ratio))+
   geom_jitter(width = 0.1)+
   geom_smooth(aes(group = as.factor(HenID)),se = F)+
   scale_color_gradient(low = "blue", high = "gold")
+
+
+# time spent on top during day
+ggplot(varOfInterest, aes(x = Date, y = Tier_4))+
+  geom_point(aes(colour = Ratio))+
+  geom_line(varOfInterest[RatioSplit == "Dom", .(meanDur = mean(Tier_4)), by = Date], aes(y = meanDur))+
+  scale_color_gradient(low = "blue", high = "gold")
+
+ggplot(data = varOfInterest, aes(x = Date, y = Tier_4))+ 
+  # geom_violin()+
+  geom_point(aes(colour = Ratio))+
+  geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanDur = mean(Tier_4)), by = Date], aes(y = meanDur), size = 1.5, se = F, colour = "black")+
+  geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanDur = mean(Tier_4)), by = Date], aes(y = meanDur), size = 1.5, linetype = "dashed", colour = "black", se = F)+
+  theme_classic(base_size = 18)+
+  labs(x = 'Date', y = "Tier_4")+
+  scale_color_gradient(low = "blue", high = "gold")
+
+
+
+
+#time spent on top and KBF
+ggplot(varOfInterest, aes(x = Date, y = Tier_4, colour = Severity))+
+  geom_point()+
+  geom_smooth(aes(group = HenID),se = F)+
+  scale_color_gradient(low = "blue", high = "gold")
+ggplot(varOfInterest[!is.na(Severity),], aes(x = Severity, y = Tier_4, colour = Ratio))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  facet_grid(~WoA)
+scale_color_gradient(low = "blue", high = "gold")
+
+
 
 ###### travel distance #### 
 hist(varOfInterest$vertTravelDist)
@@ -659,21 +732,7 @@ ggplot(varOfInterest, aes(x = Date, y = onTop, colour = Ratio))+
   geom_smooth(aes(group = HenID),method = "glm", 
               method.args = list(family = "binomial"),se = F)+
   scale_color_gradient(low = "blue", high = "gold")
-# time spent on top during day
-ggplot(varOfInterest, aes(x = Date, y = Tier_4, colour = Ratio))+
-  geom_point()+
-  geom_smooth(aes(group = HenID),se = F)+
-  scale_color_gradient(low = "blue", high = "gold")
-#time spent on top and KBF
-ggplot(varOfInterest, aes(x = Date, y = Tier_4, colour = Severity))+
-  geom_point()+
-  geom_smooth(aes(group = HenID),se = F)+
-  scale_color_gradient(low = "blue", high = "gold")
-ggplot(varOfInterest[!is.na(Severity),], aes(x = Severity, y = Tier_4, colour = Ratio))+
-  geom_point()+
-  geom_smooth(method = "lm")+
-  facet_grid(~WoA)
-  scale_color_gradient(low = "blue", high = "gold")
+
 #relation between time spent on top during day and sleeping spot
 ggplot(varOfInterest, aes(x = Tier_4, y = onTop, colour = Ratio))+
   geom_point()+
@@ -765,6 +824,44 @@ ggplot(varOfInterest, aes(x = Date, y = preNestDist, colour = Ratio))+
 
 
 ###### Feed reactivity ####
+
+
+ggplot(data = varOfInterest, aes(x = Date, y = DurationFeed2))+ 
+  # geom_violin()+
+  geom_point(aes(colour = Ratio))+
+  geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanDur = mean(DurationFeed2)), by = Date], aes(y = meanDur), size = 1.5, se = F, colour = "black")+
+  geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanDur = mean(DurationFeed2)), by = Date], aes(y = meanDur), size = 1.5, linetype = "dashed", colour = "black", se = F)+
+  theme_classic(base_size = 18)+
+  labs(x = 'Date', y = "DurationFeed2")+
+  scale_color_gradient(low = "blue", high = "gold")
+
+ggplot(data = varOfInterest, aes(x = Date, y = DurationFeed4))+ 
+  # geom_violin()+
+  geom_point(aes(colour = Ratio))+
+  geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanDur = mean(DurationFeed4)), by = Date], aes(y = meanDur), size = 1.5, se = F, colour = "black")+
+  geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanDur = mean(DurationFeed4)), by = Date], aes(y = meanDur), size = 1.5, linetype = "dashed", colour = "black", se = F)+
+  theme_classic(base_size = 18)+
+  labs(x = 'Date', y = "DurationFeed4")+
+  scale_color_gradient(low = "blue", high = "gold")
+
+ggplot(varOfInterest[WoA %in% c(22,31,40,47,54),], aes(x = DurationFeed2, y = DurationFeed4))+
+  geom_density2d_filled(contour_var = "ndensity")+
+  #geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanDur2 = mean(DurationFeed2), meanDur4 = mean(DurationFeed4)), by = Date], aes(x = meanDur2, y = meanDur4), size = 1.5, colour = "red")+
+  #geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanDur2 = mean(DurationFeed2), meanDur4 = mean(DurationFeed4)), by = Date], aes(x = meanDur2, y = meanDur4), size = 1.5, colour = "black")+
+  theme_classic(base_size = 18)+
+  facet_grid(RatioSplit~WoA)+
+  theme(legend.position="none")
+  #scale_color_gradient(low = "blue", high = "gold")
+
+#total duration not in feed zones during run
+ggplot(data = varOfInterest, aes(x = Date, y = NotFeedZone))+ 
+  # geom_violin()+
+  geom_point(aes(colour = Ratio))+
+  geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanDur = mean(NotFeedZone)), by = Date], aes(y = meanDur), size = 1.5, se = F, colour = "black")+
+  geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanDur = mean(NotFeedZone)), by = Date], aes(y = meanDur), size = 1.5, linetype = "dashed", colour = "black", se = F)+
+  theme_classic(base_size = 18)+
+  labs(x = 'Date', y = "NotFeedZone")+
+  scale_color_gradient(low = "blue", high = "gold")
 
 hist(varOfInterest$FeedReact)
 ggplot(varOfInterest[WoA %in% quantile(WoA),], aes(x = FeedReact, fill = Highlight))+
@@ -875,7 +972,6 @@ ggplot()+
 ###### 2 Vertical distance ####
 
 hist(varOfInterest$vertTravelDist)
-#TODO: interaction poly?
 model.Travel = lmer(vertTravelDist ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest)
 resid.Travel = simulateResiduals(model.Travel, 1000)
 plot(resid.Travel) #deviation okay -> potential polynomial effect
