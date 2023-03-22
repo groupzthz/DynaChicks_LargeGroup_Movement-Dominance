@@ -229,8 +229,8 @@ ggplot(data = henDataLong, aes(x = WoA, y = weight))+
 #weight gain
 ggplot(data = henDataLong, aes(x = WoA, y = weight))+ 
   # geom_violin()+
-  geom_point(aes(colour = Ratio), size = 3)+
-  #geom_line(aes(group = ID, colour = Ratio))+
+  geom_point(aes(colour = Ratio), size = 1.5)+
+  geom_line(aes(group = ID, colour = Ratio), size = 0.2)+
   geom_line(data = henDataLong[RatioSplit == "Dom", .(meanW = mean(weight)), by = WoA], aes(y = meanW), size = 1.5)+
   geom_line(data = henDataLong[RatioSplit == "Sub", .(meanW = mean(weight)), by = WoA], aes(y = meanW), size = 1.5, linetype = "dashed")+
   theme_classic(base_size = 18)+
@@ -251,29 +251,33 @@ ggplot(data = henData, aes(y = gain, x = Ratio))+
 
 
 hist(henDataLong$weight)#near-normal with small negative skew
-model.Weight = lmer(weight ~ WoA*Ratio+(1|Pen), data = henDataLong)
-null.Weight =  lmer(weight ~ 1 +(1|Pen), data = henDataLong)
+model.Weight = lmer(weight ~ WoA*Ratio+(1|Pen/HenID), data = henDataLong) #singularity
+model.Weight = lmer(weight ~ WoA*Ratio+(1|HenID), data = henDataLong)
+null.Weight =  lmer(weight ~ 1 +(1|HenID), data = henDataLong)
 resid.Weight = simulateResiduals(model.Weight, 1000)
 plot(resid.Weight) #looks like polynomial effect
 plotResiduals(resid.Weight, form = henDataLong$Ratio)
 plotResiduals(resid.Weight, form = henDataLong$WoA) #polynomial effect
 
-model.Weight = lmer(weight ~ poly(WoA, 2)+ WoA:Ratio + Ratio +(1|Pen), data = henDataLong)
+model.Weight = lmer(weight ~ poly(WoA, 2)+ WoA:Ratio + Ratio +(1|HenID), data = henDataLong)
 resid.Weight = simulateResiduals(model.Weight, 1000)
 plot(resid.Weight) #good
 plotResiduals(resid.Weight, form = henDataLong$Ratio)
 plotResiduals(resid.Weight, form = henDataLong$WoA)
 summary(model.Weight)
-anova(model.Weight, null.Weight)
+AIC(model.Weight, null.Weight)
 parameters(model.Weight)
 plot(allEffects(model.Weight))
 #variance explained by fixed factors and entire model
 r.squaredGLMM(model.Weight, null.Weight)
 
+red.Weight = lmer(weight ~ poly(WoA, 2) +(1|HenID), data = henDataLong)
+AIC(red.Weight, model.Weight)
+
 #TODO: starting at which WoA is does a weight difference appear?
 trend.Weight = emtrends(model.Weight, "WoA", va = "Ratio", at =  list(WoA = c(20, 26, 30, 35, 40, 47, 51, 55)))
 summary(trend.Weight)
-test.Weight = lmer(weight ~ poly(WoA, 2)+ WoA:Ratio + Ratio +(1|Pen), data = henDataLong[WoA <51,])
+test.Weight = lmer(weight ~ poly(WoA, 2)+ WoA:Ratio + Ratio +(1|HenID), data = henDataLong[WoA <47,])
 
 
 plotData = as.data.table(emmeans(model.Weight, ~ pairwise ~ WoA*Ratio, at =  list(Ratio = round(quantile(henDataLong$Ratio), digits = 2),
@@ -301,6 +305,7 @@ henData[Ratio > 0.7 , mean(gain)]
 ###### Health & social data ####
 
 henDataLong[, mean(Severity), by = WoA]
+henDataLong[, diffKBFSev := Severity - shift(Severity), by = ID][, mean(diffKBFSev), by = WoA]
 
 #KBF and dominance
 ggplot(data = henData, aes(y = KBF_55, x = Ratio))+ 
@@ -324,8 +329,8 @@ ggplot(data = henDataLong, aes(x = WoA, y = Severity, colour = Ratio))+
 
 ggplot(data = henDataLong, aes(x = WoA, y = Severity))+ 
   # geom_violin()+
-  geom_point(aes(colour = Ratio), size = 3)+
-  #geom_line(aes(group = ID, colour = Ratio))+
+  geom_point(aes(colour = Ratio), size = 1.5)+
+  geom_line(aes(group = ID, colour = Ratio), size = 0.2)+
   geom_line(data = henDataLong[RatioSplit == "Dom", .(meanKBF = mean(Severity)), by = WoA], aes(y = meanKBF), size = 1.5)+
   geom_line(data = henDataLong[RatioSplit == "Sub", .(meanKBF = mean(Severity)), by = WoA], aes(y = meanKBF), size = 1.5, linetype = "dashed")+
   theme_classic(base_size = 18)+
@@ -334,12 +339,13 @@ ggplot(data = henDataLong, aes(x = WoA, y = Severity))+
 
 
 
-#two lowest ranking hens with really low severity -> not laying???
+#TODO: two lowest ranking hens with really low severity -> not laying???
 
 hist(henDataLong$Severity) #normal but with a lot of zeros
-model.KBF = lmer(Severity ~ Ratio*WoA +(1|Pen), data = henDataLong)
-null.KBF =  lmer(Severity ~ 1 +(1|Pen), data = henDataLong)
-red.KBF =  lmer(Severity ~ WoA +(1|Pen), data = henDataLong)
+model.KBF = lmer(Severity ~ Ratio*WoA +(1|Pen/HenID), data = henDataLong)#singularity
+model.KBF = lmer(Severity ~ Ratio*WoA +(1|HenID), data = henDataLong)
+null.KBF =  lmer(Severity ~ 1 +(1|HenID), data = henDataLong)
+red.KBF =  lmer(Severity ~ WoA +(1|HenID), data = henDataLong)
 resid.KBF = simulateResiduals(model.KBF, 1000)
 plot(resid.KBF) #problem in left corner
 plotResiduals(resid.KBF, form = henDataLong[, Ratio]) #okay
@@ -358,7 +364,7 @@ plotResiduals(resid.KBF, form = henDataLong[WoA >26, Ratio]) #okay
 plotResiduals(resid.KBF, form = henDataLong[WoA >26, WoA]) #good
 summary(test.KBF) # estimate direction the same -> stick to full model
 
-anova(model.KBF, null.KBF)
+AIC(model.KBF, null.KBF)
 AIC(model.KBF, red.KBF)
 parameters(red.KBF)
 r.squaredGLMM(red.KBF)
@@ -387,8 +393,8 @@ ggplot(data = henDataLong, aes(x = WoA, y = feathers,colour = Ratio))+
 
 ggplot(data = henDataLong, aes(x = WoA, y = feathers))+ 
   # geom_violin()+
-  geom_point(aes(colour = Ratio), size = 3)+
-  #geom_line(aes(group = ID, colour = Ratio))+
+  geom_point(aes(colour = Ratio), size = 1.5)+
+  geom_line(aes(group = ID, colour = Ratio),size = 0.2)+
   geom_line(data = henDataLong[RatioSplit == "Dom", .(meanKBF = mean(feathers)), by = WoA], aes(y = meanKBF), size = 1.5)+
   geom_line(data = henDataLong[RatioSplit == "Sub", .(meanKBF = mean(feathers)), by = WoA], aes(y = meanKBF), size = 1.5, linetype = "dashed")+
   theme_classic(base_size = 18)+
@@ -397,28 +403,34 @@ ggplot(data = henDataLong, aes(x = WoA, y = feathers))+
 
 
 hist(henDataLong$feathers) 
-model.Feathers = glmer(feathers ~ Ratio*WoA+(1|Pen), data = henDataLong, family = poisson)
-resid.Feathers = simulateResiduals(model.Feathers, 1000)
-plot(resid.Feathers) 
-testOverdispersion(resid.Feathers)#overdispersed -> negative binomial
-model.Feathers = glmmTMB(feathers ~ Ratio + Ratio:WoA+ WoA +(1|Pen), data = henDataLong, family = "nbinom2") 
-resid.Feathers = simulateResiduals(model.Feathers, 1000) #looks like polynomial effect
-plot(resid.Feathers)
-plotResiduals(resid.Feathers, form = henDataLong$Ratio) #good
-plotResiduals(resid.Feathers, form = henDataLong$WoA) #polynomial
+# model.Feathers = glmer(feathers ~ Ratio*WoA+(1|Pen/HenID), data = henDataLong, family = poisson)
+# resid.Feathers = simulateResiduals(model.Feathers, 1000)
+# plot(resid.Feathers) 
+# testOverdispersion(resid.Feathers)#overdispersed -> negative binomial
+# model.Feathers = glmmTMB(feathers ~ Ratio + Ratio:WoA+ WoA +(1|Pen), data = henDataLong, family = "nbinom2") 
+# resid.Feathers = simulateResiduals(model.Feathers, 1000) #looks like polynomial effect
+# plot(resid.Feathers)
+# plotResiduals(resid.Feathers, form = henDataLong$Ratio) #good
+# plotResiduals(resid.Feathers, form = henDataLong$WoA) #polynomial
 
-model.Feathers = glmmTMB(feathers ~ Ratio + Ratio:WoA+ poly(WoA,2) +(1|Pen), data = henDataLong, family = "nbinom2") 
-resid.Feathers = simulateResiduals(model.Feathers, 1000) #looks like polynomial effect
-plot(resid.Feathers) #okay
+model.Feathers = glmmTMB(feathers ~ Ratio*WoA +(1|Pen/HenID), data = henDataLong, family = "nbinom2") 
+resid.Feathers = simulateResiduals(model.Feathers, 1000) 
+plot(resid.Feathers) #polynomial effect
+plotResiduals(resid.Feathers, form = henDataLong$Ratio) #good
+plotResiduals(resid.Feathers, form = henDataLong$WoA)#poly
+
+model.Feathers = glmmTMB(feathers ~ Ratio + Ratio:WoA+ poly(WoA,2, raw = T) +(1|Pen/HenID), data = henDataLong, family = "nbinom2") 
+resid.Feathers = simulateResiduals(model.Feathers, 1000) 
+plot(resid.Feathers) #looks okay
 plotResiduals(resid.Feathers, form = henDataLong$Ratio) #good
 plotResiduals(resid.Feathers, form = henDataLong$WoA)#good
-null.Feathers =  glmmTMB(feathers ~ 1 +(1|Pen), data = henDataLong, family = "nbinom2")
-red.Feathers = glmmTMB(feathers ~ poly(WoA,2) +(1|Pen), data = henDataLong, family = "nbinom2") 
+null.Feathers =  glmmTMB(feathers ~ 1 +(1|Pen/HenID), data = henDataLong, family = "nbinom2")
+red.Feathers = glmmTMB(feathers ~ poly(WoA,2, raw = T) +(1|Pen/HenID), data = henDataLong, family = "nbinom2") 
 summary(model.Feathers)
 AIC(model.Feathers, null.Feathers)
 AIC(model.Feathers, red.Feathers)
 plot(allEffects(model.Feathers))
-tidy(model.Feathers, effects = "fixed", conf.int = TRUE, exponentiate = TRUE)
+tidy(red.Feathers, effects = "fixed", conf.int = TRUE, exponentiate = TRUE)
 r.squaredGLMM(red.Feathers, null.Feathers)
 
 
@@ -477,7 +489,7 @@ ggplot(data = henData, aes(y = Affil_rec, x = Ratio))+
   geom_smooth(method = lm)+
   theme_classic(base_size = 18)
 
-##### Tracking data ####
+##### Tracking data processing ####
 
 #relevant hens
 hens = sort(unique(socialData$HenID))
@@ -486,11 +498,17 @@ trackingData = prepareTrackingData(trackingData, hens)
 #include Week of age
 trackingData = trackingData[tableWoA, on = "Date", nomatch = NULL]
 
+#if tracking data preparation has been performed once:
+# save tracking data
 #fwrite(trackingData, "trackingData.csv", sep = ";")
-trackingData <- fread("trackingData.csv")
-rm(trackingData)
 
-##### Parameters ########
+# can be reloaded instead of running again
+#trackingData <- fread("trackingData.csv")
+
+# can be removed from workspace (large dataset)
+#rm(trackingData)
+
+##### Movement behaviour extraction ########
 
 # calculate daily parameters per bird 
 
@@ -559,16 +577,17 @@ colnames(dailySleep)[3] = "ZoneSleep"
 # dailyGarten[Date %in% vacc, LatencyGarten := NA]
 
 
-###### Feeder reactivity #######
+###### Feeder activity #######
 #Feeder runs: (ab 22.11.: 2:00), 4:00, 6:00, 8:00, 10:00, 13:00, 15:00, 16:15
-#TODO: check if correct for tier 4 outcome looks kind of weird...
 
-
+#apply function to extract the daily duration in the feeding zone during feeding runs
+# TODO: first 5 min after start.. makes sense? or more?
 dailyFeed = infeedZone(trackingData)
 colnames(dailyFeed)[2] = "DurationFeed2"
 colnames(dailyFeed)[3] = "DurationFeed4"
 dailyFeed[, HenID := as.numeric(unlist(regmatches(Hen, gregexpr('\\(?[0-9,.]+', Hen))))]
 
+#old feed reactivity
 # dailyFeed = feedReactivity(trackingData)
 # 
 # dailyFeedL = melt(dailyFeed,  
@@ -582,7 +601,7 @@ dailyFeed[, HenID := as.numeric(unlist(regmatches(Hen, gregexpr('\\(?[0-9,.]+', 
 # dailyFeedL = trackingData[(Zone == "Tier_4" ) & Light == T, .(FeedZone4 = sum(Duration)), by = .(HenID, Date)][dailyFeedL, on = c("HenID", "Date")]
 # dailyFeedL = trackingData[(Zone == "Tier_2" ) & Light == T, .(FeedZone2 = sum(Duration)), by = .(HenID, Date)][dailyFeedL, on = c("HenID", "Date")]
 
-###### All parameters #######
+###### All movement behaviours #######
 #create data.table containing all daily measures
 #vertical travel distance
 varOfInterest = trackingData[Light == T, .(vertTravelDist = sum(distVertical)), by = .(HenID, Date, Pen, WoA)]
@@ -596,9 +615,9 @@ varOfInterest = varOfInterest[dailyMaxZone, on = c("HenID", "Date")]
 
 #careful with join direction not to loose the hens, for hens who don't go out for example
 # -> full outer join
-# sleep: max zone, duration in zone, is zone top tier?
+# sleep: max duration on top tier?
 varOfInterest = varOfInterest[dailySleep, on = c(HenID = "HenID", Date = "NightCycle")]
-#delete half nights
+#delete half nights (i.e., when only data of one date is available)
 varOfInterest = varOfInterest[!is.na(Pen),]
 # wintergarden: did hen go out? duration in garten, latency to enter 
 #varOfInterest = dailyGarten[varOfInterest, on = c(HenID = "HenID", Date = "Date")]
@@ -612,8 +631,6 @@ varOfInterest = socialData[, .(HenID,Ratio,Comb)][varOfInterest, on = "HenID"]
 
 #varOfInterest = henDataLong[, .(HenID,Severity,WoA)][varOfInterest, on = c("HenID", "WoA")] 
 
-
-##### Parameter inspection plots ####
 
 #Highlight three most extreme
 varOfInterest[, Highlight := "Any"]
@@ -629,7 +646,347 @@ varOfInterest[, RatioSplit := "Dom"]
 varOfInterest[Ratio < 0.5, RatioSplit := "Sub"]
 
 
-###### durations in general ####
+##### Analysing movement behaviour ######
+
+###### descriptives ####
+varOfInterest[, .(mean(Tier_4)/60/60, sd(Tier_4)/60/60)]
+varOfInterest[, .(mean(Tier_2)/60/60, sd(Tier_2)/60/60)]
+varOfInterest[, .(mean(Litter)/60/60, sd(Litter)/60/60)]
+varOfInterest[, .(mean(Wintergarten)/60, sd(Wintergarten)/60)]
+varOfInterest[, .(mean(Ramp_Nestbox)/60, sd(Ramp_Nestbox)/60)]
+
+varOfInterest[, .N/nrow(varOfInterest), by = MaxZone]
+
+varOfInterest[Ratio < 0.17 , mean(Tier_4), by = .(HenID, WoA)][WoA< 27, mean(V1)/60/60]
+varOfInterest[Ratio < 0.17 , mean(Tier_4), by = .(HenID, WoA)][WoA> 49, mean(V1)/60/60]
+varOfInterest[Ratio > 0.7 , mean(Tier_4), by = .(HenID, WoA)][WoA <27, mean(V1)/60/60]
+varOfInterest[Ratio > 0.7 , mean(Tier_4), by = .(HenID, WoA)][WoA <49, mean(V1)/60/60]
+
+
+###### 1 daily duration on top tier ####
+
+
+hist(varOfInterest$Tier_4) 
+hist(varOfInterest$Tier_4[varOfInterest$Tier_4 != 0]) 
+#looks like poisson
+
+model.Duration = glmmTMB(Tier_4 ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest, family = poisson)
+resid.Duration = simulateResiduals(model.Duration, 1000)
+plot(resid.Duration) #zero inflation issue most likely
+plotResiduals(resid.Duration, form = varOfInterest$Ratio)
+plotResiduals(resid.Duration, form = varOfInterest$WoA)
+testZeroInflation(model.Duration) #indeed zero inflation
+test.Duration = glmmTMB(Tier_4 ~ Ratio*WoA + (1|HenID), data = varOfInterest, family = poisson, 
+                         zi = ~1)
+AIC(model.Duration, test.Duration) # including general inflation term makes fit much better
+resid.Duration = simulateResiduals(test.Duration, 1000)
+plot(resid.Duration) #deviation okay 
+plotResiduals(resid.Duration, form = varOfInterest$Ratio)
+plotResiduals(resid.Duration, form = varOfInterest$WoA)
+
+null.Duration = glmmTMB(Tier_4 ~ 1 + (1|HenID), data = varOfInterest, family = poisson, 
+                        zi = ~1)
+AIC(test.Duration, null.Duration) #much better than null model
+plot(allEffects(test.Duration)) 
+summary(test.Duration)
+tidy(test.Duration, effects = "fixed", conf.int = TRUE, exponentiate = TRUE)
+r.squaredGLMM(test.Duration, null.Duration)
+
+#compare against binomial and non-zero models if estimate direction is the same 
+varOfInterest[, on4 := ifelse(Tier_4 >0, 1, 0)]
+split1.Duration = glmer(on4 ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest, family = binomial)
+resid.Duration = simulateResiduals(split1.Duration, 1000)
+plot(resid.Duration) #good
+plotResiduals(resid.Duration, form = varOfInterest$Ratio)
+plotResiduals(resid.Duration, form = varOfInterest$WoA)
+parameters(split1.Duration, exp = TRUE) # the same
+
+split2.Duration = glmer(Tier_4 ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest[Tier_4 >0,], family = poisson)
+resid.Duration = simulateResiduals(split2.Duration, 1000)
+plot(resid.Duration) #deviation okay
+plotResiduals(resid.Duration, form = varOfInterest[Tier_4 >0, Ratio])
+plotResiduals(resid.Duration, form = varOfInterest[Tier_4 >0, WoA])
+parameters(split2.Duration, exp = TRUE) # the same
+
+plotData = as.data.table(emmeans(test.Duration, ~ pairwise ~ WoA*Ratio, type = "response",
+                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
+                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)))$emmeans)
+
+
+varOfInterest[, PredictDuration4 := predict(test.Duration)]
+
+ggplot()+ 
+  geom_jitter(data = varOfInterest, aes(x = WoA, y = Tier_4), height = 0.02, size = 1, alpha = 0.1)+
+  geom_line(data = plotData, aes(x = WoA, y = rate, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
+  geom_ribbon(data = plotData, aes(x = WoA, ymin = lower.CL, ymax = upper.CL, group = Ratio), alpha = 0.1)+
+  #facet_grid(.~Pen)+
+  theme_classic(base_size = 18)
+
+
+###### 2 Vertical distance ####
+
+hist(varOfInterest$vertTravelDist) #normally distributed with some outliers maybe
+model.Travel = lmer(vertTravelDist ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest)
+resid.Travel = simulateResiduals(model.Travel, 1000)
+plot(resid.Travel) #deviation okay -> potential polynomial effect
+plotResiduals(resid.Travel, form = varOfInterest$Ratio)
+plotResiduals(resid.Travel, form = varOfInterest$WoA)#-> polynomial effect?
+test.Travel = lmer(vertTravelDist ~ Ratio:WoA + Ratio + poly(WoA,2) + (1|Pen/HenID), data = varOfInterest)
+resid.Travel = simulateResiduals(test.Travel, 1000)
+plot(resid.Travel) #looks better
+plotResiduals(resid.Travel, form = varOfInterest$Ratio)
+plotResiduals(resid.Travel, form = varOfInterest$WoA)#better
+AIC(model.Travel, test.Travel)# poly is better
+
+null.Travel = lmer(vertTravelDist ~ 1 + (1|Pen/HenID), data = varOfInterest)
+AIC(test.Travel, null.Travel)#test is better
+summary(test.Travel)
+parameters(test.Travel)
+plot(allEffects(test.Travel))
+r.squaredGLMM(test.Travel, null.Travel)
+
+plotData = as.data.table(emmeans(test.Travel, ~ pairwise ~ poly(WoA,2)+WoA:Ratio+ Ratio, 
+                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
+                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)))$emmeans)
+
+
+varOfInterest[, PredictTravel := predict(test.Travel)]
+
+ggplot()+ 
+  geom_jitter(data = varOfInterest, aes(x = WoA, y = vertTravelDist), height = 0.02, size = 1, alpha = 0.1)+
+  geom_line(data = plotData, aes(x = WoA, y = emmean, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
+  geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio), alpha = 0.1)+
+  #facet_grid(.~Pen)+
+  theme_classic(base_size = 18)
+
+ggplot(varOfInterest, aes(x = Date, y = vertTravelDist, color = RatioSplit)) +
+  geom_jitter(size=2) + 
+  geom_line(data = varOfInterest[, mean(PredictTravel), by = .(Date, RatioSplit)], 
+                              aes(x = Date, y =V1, colour = RatioSplit),size=1.5) + 
+  theme_classic(base_size = 18)+ 
+  ylab("daily vertical travel distance")#+ 
+
+#plot individual variation
+ggplot(data = varOfInterest, aes(x = WoA, y = PredictTravel, colour = as.factor(HenID))) + 
+  geom_line(aes(group = HenID), size=1)+
+  labs(y = "Predicted vertical travel distance",color = "Hen ID")+ 
+  theme_classic(base_size = 18)+ theme(legend.position="none")+ 
+  guides(color = guide_legend(nrow = 4))
+
+#plot against actual data of some examples
+ggplot(data = varOfInterest[Highlight != "Any",], 
+       aes(x = WoA, colour = as.factor(HenID))) + 
+  geom_jitter(aes(y = vertTravelDist))+
+  geom_line(aes(y = PredictTravel, group = HenID), size=1)+
+  labs(y = "Predicted vertical travel distance",color = "Hen ID")+ 
+  theme_classic(base_size = 18)+ 
+  guides(color = guide_legend(nrow = 4))
+
+###### 3 Nestbox Time #####
+
+#only use data from when the lights went on at 02:00 otherwise too affected -> only 12 days gone
+varOfInterest[, fullCycle := !(day(Date) <21 & month(Date) == 11)]
+nestData = varOfInterest[fullCycle == TRUE,]
+
+hist(as.numeric(nestData[,MedTimeNest])) #normally distributed but a bit wide
+
+model.Nest = lmer(as.numeric(MedTimeNest) ~ Ratio*WoA+ (1|Pen/HenID), data = nestData)
+resid.Nest = simulateResiduals(model.Nest, 1000)
+plot(resid.Nest) #polynomial necessary
+plotResiduals(resid.Nest, form = nestData[!is.na(MedTimeNest), Ratio])
+plotResiduals(resid.Nest, form = nestData[!is.na(MedTimeNest), WoA]) #poly
+
+test.Nest = lmer(as.numeric(MedTimeNest) ~ Ratio+ Ratio:WoA +poly(WoA,2)+ (1|Pen/HenID), data = nestData)
+null.Nest = lmer(as.numeric(MedTimeNest) ~ 1+ (1|Pen/HenID), data = nestData)
+#model without full interaction worse
+AIC(model.Nest, test.Nest) #poly better
+AIC(test.Nest, null.Nest) #poly better
+
+summary(test.Nest)
+parameters(test.Nest)
+plot(allEffects(test.Nest))
+r.squaredGLMM(test.Nest, null.Nest)
+
+plotData = as.data.table(emmeans(test.Nest, ~ pairwise ~ Ratio+ Ratio:WoA +poly(WoA,2), 
+                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
+                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)), type = "response")$emmeans)
+plotData[, Time := as.ITime(response)]
+plotData[, Plus := as.ITime(asymp.UCL)]
+plotData[, Minus := as.ITime(asymp.LCL)]
+
+nestData[!is.na(MedTimeNest), PredictNest:= predict(test.Nest)]
+
+ggplot()+ 
+  geom_jitter(data = nestData, aes(x = WoA, y = MedTimeNest), height = 0.02, size = 1, alpha = 0.1)+
+  geom_line(data = plotData, aes(x = WoA, y = Time, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
+  geom_ribbon(data = plotData, aes(x = WoA, ymin = Minus, ymax = Plus, group = Ratio), alpha = 0.1)+
+  #facet_grid(.~Pen)+
+  theme_classic(base_size = 18)
+
+
+
+###### 4 Sleeping spot #####
+
+hist(varOfInterest$onTop)
+hist(varOfInterest[, sum(onTop), by = HenID][,V1])
+
+model.Sleep = glmer(onTop ~ Ratio*WoA+ (1|Pen/HenID), data = varOfInterest, family = binomial)
+#singularity due to Pen
+model.Sleep = glmer(onTop ~ Ratio*WoA + (1|HenID),  data = varOfInterest, family = binomial)
+null.Sleep = glmer(onTop ~ 1 + (1|HenID),  data = varOfInterest, family = binomial)
+resid.Sleep = simulateResiduals(model.Sleep, 1000)
+plot(resid.Sleep)#looks good
+plotResiduals(resid.Sleep, form = varOfInterest$Ratio[!is.na(varOfInterest$onTop)])
+plotResiduals(resid.Sleep, form = varOfInterest$DateID[!is.na(varOfInterest$onTop)])
+AIC(model.Sleep, null.Sleep) #better than null model
+summary(model.Sleep)
+parameters(model.Sleep, exp = TRUE) #TODO: why increased probability with age and WOA???
+plot(allEffects(model.Sleep))
+r.squaredGLMM(model.Sleep, null.Sleep)
+
+plotData = as.data.table(emmeans(model.Sleep, ~ pairwise ~ WoA*Ratio, 
+                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
+                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)), type = "response")$emmeans)
+
+
+varOfInterest[, PredictSleep:= predict(model.Sleep)]
+
+ggplot()+ 
+  geom_jitter(data = varOfInterest, aes(x = WoA, y = onTop), height = 0.02, size = 1, alpha = 0.1)+
+  geom_line(data = plotData, aes(x = WoA, y = prob, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
+  geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio), alpha = 0.1)+
+  #facet_grid(.~Pen)+
+  theme_classic(base_size = 18)
+
+
+
+
+###### correlations between parameters ####
+
+#TODO: possible as one table containing all correlations??
+
+cor.test(varOfInterest$Tier_4, varOfInterest$vertTravelDist) # negative correlation -0.4
+cor.test(varOfInterest$Tier_4, as.numeric(varOfInterest$MedTimeNest)) #negative correlation -0.11
+cor.test(varOfInterest$Tier_4,varOfInterest$onTop)#positive correlation 0.37
+cor.test(varOfInterest$vertTravelDist, as.numeric(varOfInterest$MedTimeNest))# tiny negative correlation -0.05
+cor.test(varOfInterest$vertTravelDist, varOfInterest$onTop)# negative correlation -0.12
+cor.test(varOfInterest$onTop, as.numeric(varOfInterest$MedTimeNest)) #no correlation -0.02
+
+
+# ###### Wintergarten ####
+# 
+# #start model
+# hist(varOfInterest$Out)
+# model.Garten = glmer(Out ~ Ratio*WoA + (1|Pen/HenID), family = binomial, data = varOfInterest)
+# resid.Garten = simulateResiduals(model.Garten, 1000)
+# plot(resid.Garten)#good
+# plotResiduals(resid.Garten, form = varOfInterest$Ratio)
+# plotResiduals(resid.Garten, form = varOfInterest$WoA)
+# summary(model.Garten)
+# plot(allEffects(model.Garten))
+# parameters(model.Garten, exp = T)
+# plotData = as.data.table(emmeans(model.Garten, ~ pairwise ~ WoA*Ratio, 
+#                                  at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
+#                                   WoA = c(20, 26, 30, 35, 40, 47, 51, 55)), type = "response")$emmeans)
+# 
+# 
+# varOfInterest[, PredictGarten:= predict(model.Garten)]
+# 
+# ggplot()+ 
+#   geom_jitter(data = varOfInterest, aes(x = WoA, y = Out), height = 0.02, size = 1, alpha = 0.1)+
+#   geom_line(data = plotData, aes(x = WoA, y = prob, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
+#   geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio), alpha = 0.1)+
+#   #facet_grid(.~Pen)+
+#   theme_classic(base_size = 18)
+# 
+# 
+# #model of duration very difficult to fit
+# #model of latency equally bad
+# # hist(as.numeric(varOfInterest$LatencyGarten))
+# # model.Garten = glmer.nb(as.numeric(LatencyGarten) ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest)
+# # model.Garten = glmer(as.numeric(LatencyGarten) ~ Ratio*WoA + (1|HenID), family = poisson, data = varOfInterest)
+# # resid.Garten = simulateResiduals(model.Garten, 1000)
+# # plot(resid.Garten) #okayish
+# # plotResiduals(resid.Garten, form = varOfInterest$Ratio)
+# # plotResiduals(resid.Garten, form = varOfInterest$WoA)
+# # summary(model.Garten)
+# # plot(allEffects(model.Garten))
+# 
+# 
+# varOfInterest[, PredictGarten := predict(model.Garten, type="response")]
+# 
+# ggplot(varOfInterest, aes(x = WoA, y = Out, color = RatioSplit)) +
+#   #geom_jitter(size=2) +
+#   geom_line(data = varOfInterest[, mean(PredictGarten), by = .(WoA, RatioSplit)],
+#             aes(x = WoA, y =V1, colour = RatioSplit),size=1.5) +
+#   theme_classic(base_size = 18)+
+#   ylab("Out in wintergarten")
+# 
+# #plot individual variation
+# ggplot(data = varOfInterest, aes(x = WoA, y = PredictGarten, colour = as.factor(HenID))) +
+#   geom_line(aes(group = HenID), size=1)+
+#   labs(y = "Predicted probability to go in wintergarten",color = "Hen ID")+
+#   theme_classic(base_size = 18)+ theme(legend.position="none")+
+#   guides(color = guide_legend(nrow = 4))
+# 
+# #plot against actual data of some examples
+# ggplot(data = varOfInterest[Highlight != "Any",],
+#        aes(x = WoA, colour = as.factor(HenID))) +
+#   geom_jitter(aes(y = Out))+
+#   geom_line(aes(y = PredictGarten, group = HenID), size=1)+
+#   labs(y = "Predicted vertical travel distance",color = "Hen ID")+
+#   theme_classic(base_size = 18)+
+#   guides(color = guide_legend(nrow = 4))
+
+
+###### Feed reactivity #####
+
+hist(as.numeric(varOfInterest$FeedReact))
+model.Feed = lmer(FeedReact ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest)
+model.Feed2 = lmer(FeedReact ~ Ratio*WoA + Ratio*MaxZone + MaxZone*WoA+ (1|Pen/HenID), data = varOfInterest)
+model.Feed3 = lmer(FeedReact ~ Ratio*WoA + MaxZone + (1|Pen/HenID), data = varOfInterest)
+anova(model.Feed, model.Feed2)
+anova(model.Feed2, model.Feed3)
+#TODO: Model with maxzone better but informative?? 
+resid.Feed = simulateResiduals(model.Feed, 1000)
+plot(resid.Feed) 
+plotResiduals(resid.Feed, form = varOfInterest$Ratio[!is.na(varOfInterest$FeedReact)])
+plotResiduals(resid.Feed, form = varOfInterest$WoA[!is.na(varOfInterest$FeedReact)])
+plotResiduals(resid.Feed, form = varOfInterest$MaxZone[!is.na(varOfInterest$FeedReact)])
+summary(model.Feed)
+plot(allEffects(model.Feed))
+parameters(model.Feed)
+
+
+hist(varOfInterest$FeedZoneDur)
+model.Feed = lmer(FeedZoneDur ~ Ratio*WoA+ (1|Pen/HenID), data = varOfInterest)
+model.Feed = lmer(FeedZoneDur ~ Ratio*WoA+ (1|HenID), data = varOfInterest)
+resid.Feed = simulateResiduals(model.Feed, 1000)
+plot(resid.Feed) 
+plotResiduals(resid.Feed, form = varOfInterest$Ratio[!is.na(varOfInterest$FeedReact)])
+plotResiduals(resid.Feed, form = varOfInterest$WoA[!is.na(varOfInterest$FeedReact)])
+summary(model.Feed)
+plot(allEffects(model.Feed))
+
+
+plotData = as.data.table(emmeans(model.Feed, ~ pairwise ~ WoA*Ratio, 
+                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
+                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)), type = "response")$emmeans)
+
+
+varOfInterest[, PredictFeedReact:= predict(model.Feed)]
+
+ggplot()+ 
+  geom_jitter(data = varOfInterest, aes(x = WoA, y = FeedReact), height = 0.02, size = 1, alpha = 0.1)+
+  geom_line(data = plotData, aes(x = WoA, y = emmean, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
+  #geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio), alpha = 0.1)+
+  #facet_grid(.~Pen)+
+  theme_classic(base_size = 18)
+
+
+##### Movement inspection plots ####
+
+###### Durations in general ####
 
 #heatmap of durations by ratio (hens sorted)
 ggplot(trackingData[Light == T, .(Duration = sum(Duration)), by = .(HenID, Zone)], aes(x = Zone, y = factor(HenID, levels = socialData$HenID))) +
@@ -638,18 +995,24 @@ ggplot(trackingData[Light == T, .(Duration = sum(Duration)), by = .(HenID, Zone)
 
 #heatmap of durations by ratio (hens sorted) by WoA
 plot = trackingData[, .(nDays = length(unique(Date))), by = .(HenID, WoA)][
-  trackingData[Light == T, .(Duration = sum(Duration)), by = .(HenID, Zone, WoA)][WoA %in% quantile(WoA),], 
+  trackingData[Light == T, .(Duration = sum(Duration)/60/60), by = .(HenID, Zone, WoA)][WoA %in% quantile(WoA),], 
   on = .(HenID, WoA)]
 plot[, dailyDuration := Duration/nDays]
+plot[, Zone := factor(Zone, levels = c("Wintergarten","Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
+
 ggplot(plot, aes(x = Zone, y = factor(HenID, levels = socialData$HenID))) +
   geom_tile(aes(fill = dailyDuration), colour = "white") +
   scale_fill_gradient(low = "white", high = "red")+
+  labs(y = "Hens by increasing aggression value")+
+  theme_bw(base_size = 18)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
   facet_grid(.~WoA)
 
 #most common zone daily
 ggplot(varOfInterest, aes(x = Date, y = factor(MaxZone, levels = c("Wintergarten","Litter", "Tier_2", "Ramp_Nestbox", "Tier_4")), colour = Ratio))+
   geom_jitter(width = 0.1)+
   #geom_smooth(aes(group = as.factor(HenID)),se = F)+
+  labs(x = 'Date', y = "Most common daily zone")+
   scale_color_gradient(low = "blue", high = "gold")+
   theme_classic(base_size = 18)
 
@@ -674,13 +1037,12 @@ ggplot(varOfInterest, aes(x = Date, y = Tier_4))+
 ggplot(data = varOfInterest, aes(x = Date, y = Tier_4))+ 
   # geom_violin()+
   geom_point(aes(colour = Ratio))+
+  #geom_smooth(aes(colour = Ratio,group = as.factor(HenID)),se = F)+
   geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanDur = mean(Tier_4)), by = Date], aes(y = meanDur), size = 1.5, se = F, colour = "black")+
   geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanDur = mean(Tier_4)), by = Date], aes(y = meanDur), size = 1.5, linetype = "dashed", colour = "black", se = F)+
   theme_classic(base_size = 18)+
   labs(x = 'Date', y = "Tier_4")+
   scale_color_gradient(low = "blue", high = "gold")
-
-
 
 
 #time spent on top and KBF
@@ -851,7 +1213,7 @@ ggplot(varOfInterest[WoA %in% c(22,31,40,47,54),], aes(x = DurationFeed2, y = Du
   theme_classic(base_size = 18)+
   facet_grid(RatioSplit~WoA)+
   theme(legend.position="none")
-  #scale_color_gradient(low = "blue", high = "gold")
+#scale_color_gradient(low = "blue", high = "gold")
 
 #total duration not in feed zones during run
 ggplot(data = varOfInterest, aes(x = Date, y = NotFeedZone))+ 
@@ -892,11 +1254,11 @@ ggplot(varOfInterest, aes(x = FeedZoneDur, y = FeedReact, colour = Ratio))+
 ggplot(varOfInterest, aes(x = FeedZone4, y = FeedReact, colour = Ratio))+
   geom_point()+
   geom_smooth(colour = "red",se = T)+
-scale_color_gradient(low = "blue", high = "gold")
+  scale_color_gradient(low = "blue", high = "gold")
 ggplot(varOfInterest, aes(x = FeedZone2, y = FeedReact, colour = Ratio))+
   geom_point()+
   geom_smooth(colour = "red",se = T)+
-scale_color_gradient(low = "blue", high = "gold")
+  scale_color_gradient(low = "blue", high = "gold")
 ggplot(varOfInterest, aes(x = FeedZone2, y = FeedZone4, colour = Ratio))+
   geom_point()+
   geom_smooth(colour = "red",se = T)+
@@ -905,327 +1267,6 @@ ggplot(varOfInterest, aes(x = FeedZone2, y = FeedZone4, colour = Ratio))+
 
 #TODO: take out outliers
 cor.test(varOfInterest$FeedZoneDur, varOfInterest$FeedReact)
-
-##### Test models ######
-
-
-###### 1 daily duration in zone 4 ####
-
-hist(varOfInterest$Tier_4)
-
-model.Duration = glmer(Tier_4 ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest, family = poisson)
-summary(model.Duration) #pen creates singularity issue
-model.Duration = glmer(Tier_4 ~ Ratio*WoA + (1|HenID), data = varOfInterest, family = poisson)
-resid.Duration = simulateResiduals(model.Duration, 1000)
-plot(resid.Duration) #zero inflation issue most likely
-plotResiduals(resid.Duration, form = varOfInterest$Ratio)
-plotResiduals(resid.Duration, form = varOfInterest$WoA)
-testZeroInflation(model.Duration)
-model.Duration = glmmTMB(Tier_4 ~ Ratio*WoA + (1|HenID), data = varOfInterest, family = poisson)
-test.Duration = glmmTMB(Tier_4 ~ Ratio*WoA + (1|HenID), data = varOfInterest, family = poisson, 
-                         zi = ~1)
-AIC(model.Duration, test.Duration) # including general inflation term makes fit better
-resid.Duration = simulateResiduals(test.Duration, 1000)
-plot(resid.Duration) #deviation okay
-plotResiduals(resid.Duration, form = varOfInterest$Ratio)
-plotResiduals(resid.Duration, form = varOfInterest$WoA)
-
-null.Duration = glmmTMB(Tier_4 ~ 1 + (1|HenID), data = varOfInterest, family = poisson, 
-                        zi = ~1)
-AIC(test.Duration, null.Duration) #much better than null model
-plot(allEffects(test.Duration)) 
-summary(test.Duration)
-tidy(test.Duration, effects = "fixed", conf.int = TRUE, exponentiate = TRUE)
-r.squaredGLMM(test.Duration, null.Duration)
-
-#compare against binomial and non-zero models if estimate direction is the same 
-varOfInterest[, on4 := ifelse(Tier_4 >0, 1, 0)]
-split1.Duration = glmer(on4 ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest, family = binomial)
-resid.Duration = simulateResiduals(split1.Duration, 1000)
-plot(resid.Duration) #deviation okay
-plotResiduals(resid.Duration, form = varOfInterest$Ratio)
-plotResiduals(resid.Duration, form = varOfInterest$WoA)
-parameters(split1.Duration, exp = TRUE) # the same
-
-split2.Duration = glmer(Tier_4 ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest[Tier_4 >0,], family = poisson)
-resid.Duration = simulateResiduals(split2.Duration, 1000)
-plot(resid.Duration) #deviation okay
-plotResiduals(resid.Duration, form = varOfInterest[Tier_4 >0, Ratio])
-plotResiduals(resid.Duration, form = varOfInterest[Tier_4 >0, WoA])
-parameters(split2.Duration, exp = TRUE) # the same
-
-plotData = as.data.table(emmeans(test.Duration, ~ pairwise ~ WoA*Ratio, type = "response",
-                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
-                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)))$emmeans)
-
-
-varOfInterest[, PredictDuration4 := predict(test.Duration)]
-
-ggplot()+ 
-  geom_jitter(data = varOfInterest, aes(x = WoA, y = Tier_4), height = 0.02, size = 1, alpha = 0.1)+
-  geom_line(data = plotData, aes(x = WoA, y = rate, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
-  geom_ribbon(data = plotData, aes(x = WoA, ymin = lower.CL, ymax = upper.CL, group = Ratio), alpha = 0.1)+
-  #facet_grid(.~Pen)+
-  theme_classic(base_size = 18)
-
-
-###### 2 Vertical distance ####
-
-hist(varOfInterest$vertTravelDist)
-model.Travel = lmer(vertTravelDist ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest)
-resid.Travel = simulateResiduals(model.Travel, 1000)
-plot(resid.Travel) #deviation okay -> potential polynomial effect
-plotResiduals(resid.Travel, form = varOfInterest$Ratio)
-plotResiduals(resid.Travel, form = varOfInterest$WoA)#-> polynomial effect?
-test.Travel = lmer(vertTravelDist ~ Ratio:WoA + Ratio + poly(WoA,2) + (1|Pen/HenID), data = varOfInterest)
-resid.Travel = simulateResiduals(test.Travel, 1000)
-plot(resid.Travel) #looks better
-plotResiduals(resid.Travel, form = varOfInterest$Ratio)
-plotResiduals(resid.Travel, form = varOfInterest$WoA)#better
-AIC(model.Travel, test.Travel)# poly is better
-
-null.Travel = lmer(vertTravelDist ~ 1 + (1|Pen/HenID), data = varOfInterest)
-AIC(test.Travel, null.Travel)#test is better
-summary(test.Travel)
-parameters(test.Travel)
-plot(allEffects(test.Travel))
-r.squaredGLMM(test.Travel, null.Travel)
-
-plotData = as.data.table(emmeans(test.Travel, ~ pairwise ~ poly(WoA,2)+WoA:Ratio+ Ratio, 
-                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
-                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)))$emmeans)
-
-
-varOfInterest[, PredictTravel := predict(test.Travel)]
-
-ggplot()+ 
-  geom_jitter(data = varOfInterest, aes(x = WoA, y = vertTravelDist), height = 0.02, size = 1, alpha = 0.1)+
-  geom_line(data = plotData, aes(x = WoA, y = emmean, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
-  geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio), alpha = 0.1)+
-  #facet_grid(.~Pen)+
-  theme_classic(base_size = 18)
-
-ggplot(varOfInterest, aes(x = Date, y = vertTravelDist, color = RatioSplit)) +
-  geom_jitter(size=2) + 
-  geom_line(data = varOfInterest[, mean(PredictTravel), by = .(Date, RatioSplit)], 
-                              aes(x = Date, y =V1, colour = RatioSplit),size=1.5) + 
-  theme_classic(base_size = 18)+ 
-  ylab("daily vertical travel distance")#+ 
-
-#plot individual variation
-ggplot(data = varOfInterest, aes(x = WoA, y = PredictTravel, colour = as.factor(HenID))) + 
-  geom_line(aes(group = HenID), size=1)+
-  labs(y = "Predicted vertical travel distance",color = "Hen ID")+ 
-  theme_classic(base_size = 18)+ theme(legend.position="none")+ 
-  guides(color = guide_legend(nrow = 4))
-
-#plot against actual data of some examples
-ggplot(data = varOfInterest[Highlight != "Any",], 
-       aes(x = WoA, colour = as.factor(HenID))) + 
-  geom_jitter(aes(y = vertTravelDist))+
-  geom_line(aes(y = PredictTravel, group = HenID), size=1)+
-  labs(y = "Predicted vertical travel distance",color = "Hen ID")+ 
-  theme_classic(base_size = 18)+ 
-  guides(color = guide_legend(nrow = 4))
-
-
-
-###### 3 Sleeping spot #####
-
-hist(varOfInterest$onTop)
-hist(varOfInterest[, sum(onTop), by = HenID][,V1])
-model.Sleep = glmer(onTop ~ Ratio*WoA+ (1|Pen/HenID), data = varOfInterest, family = binomial)
-#singularity due to Pen
-model.Sleep = glmer(onTop ~ Ratio*WoA + (1|HenID),  data = varOfInterest, family = binomial)
-null.Sleep = glmer(onTop ~ 1 + (1|HenID),  data = varOfInterest, family = binomial)
-resid.Sleep = simulateResiduals(model.Sleep, 1000)
-plot(resid.Sleep)#looks good
-plotResiduals(resid.Sleep, form = varOfInterest$Ratio[!is.na(varOfInterest$onTop)])
-plotResiduals(resid.Sleep, form = varOfInterest$DateID[!is.na(varOfInterest$onTop)])
-AIC(model.Sleep, null.Sleep) #better than null model
-summary(model.Sleep)
-parameters(model.Sleep, exp = TRUE) #TODO: why increased probability with age and WOA???
-plot(allEffects(model.Sleep))
-r.squaredGLMM(model.Sleep, null.Sleep)
-
-plotData = as.data.table(emmeans(model.Sleep, ~ pairwise ~ WoA*Ratio, 
-                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
-                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)), type = "response")$emmeans)
-
-
-varOfInterest[, PredictSleep:= predict(model.Sleep)]
-
-ggplot()+ 
-  geom_jitter(data = varOfInterest, aes(x = WoA, y = onTop), height = 0.02, size = 1, alpha = 0.1)+
-  geom_line(data = plotData, aes(x = WoA, y = prob, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
-  geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio), alpha = 0.1)+
-  #facet_grid(.~Pen)+
-  theme_classic(base_size = 18)
-
-
-
-###### 4 Nestbox Time #####
-
-#only use data from when the lights went on at 02:00 otherwise too affected -> 12 days gone
-varOfInterest[, fullCycle := !(day(Date) <21 & month(Date) == 11)]
-nestData = varOfInterest[fullCycle == TRUE,]
-
-hist(as.numeric(nestData[,MedTimeNest]))
-model.Nest = lmer(as.numeric(MedTimeNest) ~ Ratio*WoA+ (1|Pen/HenID), data = nestData)
-resid.Nest = simulateResiduals(model.Nest, 1000)
-plot(resid.Nest) #polynomial necessary
-plotResiduals(resid.Nest, form = nestData[!is.na(MedTimeNest), Ratio])
-plotResiduals(resid.Nest, form = nestData[!is.na(MedTimeNest), WoA]) #poly
-
-test.Nest = lmer(as.numeric(MedTimeNest) ~ Ratio+ Ratio:WoA +poly(WoA,2)+ (1|Pen/HenID), data = nestData)
-null.Nest = lmer(as.numeric(MedTimeNest) ~ 1+ (1|Pen/HenID), data = nestData)
-#model without full interaction worse
-AIC(model.Nest, test.Nest) #poly better
-AIC(test.Nest, null.Nest) #poly better
-
-summary(test.Nest)
-parameters(test.Nest)
-plot(allEffects(test.Nest))
-r.squaredGLMM(test.Nest, null.Nest)
-
-plotData = as.data.table(emmeans(test.Nest, ~ pairwise ~ Ratio+ Ratio:WoA +poly(WoA,2), 
-                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
-                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)), type = "response")$emmeans)
-plotData[, Time := as.ITime(response)]
-plotData[, Plus := as.ITime(asymp.UCL)]
-plotData[, Minus := as.ITime(asymp.LCL)]
-
-nestData[, PredictNest:= predict(test.Nest)]
-
-ggplot()+ 
-  geom_jitter(data = nestData, aes(x = WoA, y = MedTimeNest), height = 0.02, size = 1, alpha = 0.1)+
-  geom_line(data = plotData, aes(x = WoA, y = Time, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
-  geom_ribbon(data = plotData, aes(x = WoA, ymin = Minus, ymax = Plus, group = Ratio), alpha = 0.1)+
-  #facet_grid(.~Pen)+
-  theme_classic(base_size = 18)
-
-
-###### correlations between parameters ####
-
-cor.test(varOfInterest$Tier_4, varOfInterest$vertTravelDist) # negative correlation -0.4
-cor.test(varOfInterest$Tier_4, as.numeric(varOfInterest$MedTimeNest)) #negative correlation -0.11
-cor.test(varOfInterest$Tier_4,varOfInterest$onTop)#positive correlation 0.37
-cor.test(varOfInterest$vertTravelDist, as.numeric(varOfInterest$MedTimeNest))# tiny negative correlation -0.05
-cor.test(varOfInterest$vertTravelDist, varOfInterest$onTop)# negative correlation -0.12
-cor.test(varOfInterest$onTop, as.numeric(varOfInterest$MedTimeNest)) #no correlation -0.02
-
-
-# ###### Wintergarten ####
-# 
-# #start model
-# hist(varOfInterest$Out)
-# model.Garten = glmer(Out ~ Ratio*WoA + (1|Pen/HenID), family = binomial, data = varOfInterest)
-# resid.Garten = simulateResiduals(model.Garten, 1000)
-# plot(resid.Garten)#good
-# plotResiduals(resid.Garten, form = varOfInterest$Ratio)
-# plotResiduals(resid.Garten, form = varOfInterest$WoA)
-# summary(model.Garten)
-# plot(allEffects(model.Garten))
-# parameters(model.Garten, exp = T)
-# plotData = as.data.table(emmeans(model.Garten, ~ pairwise ~ WoA*Ratio, 
-#                                  at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
-#                                   WoA = c(20, 26, 30, 35, 40, 47, 51, 55)), type = "response")$emmeans)
-# 
-# 
-# varOfInterest[, PredictGarten:= predict(model.Garten)]
-# 
-# ggplot()+ 
-#   geom_jitter(data = varOfInterest, aes(x = WoA, y = Out), height = 0.02, size = 1, alpha = 0.1)+
-#   geom_line(data = plotData, aes(x = WoA, y = prob, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
-#   geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio), alpha = 0.1)+
-#   #facet_grid(.~Pen)+
-#   theme_classic(base_size = 18)
-# 
-# 
-# #model of duration very difficult to fit
-# #model of latency equally bad
-# # hist(as.numeric(varOfInterest$LatencyGarten))
-# # model.Garten = glmer.nb(as.numeric(LatencyGarten) ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest)
-# # model.Garten = glmer(as.numeric(LatencyGarten) ~ Ratio*WoA + (1|HenID), family = poisson, data = varOfInterest)
-# # resid.Garten = simulateResiduals(model.Garten, 1000)
-# # plot(resid.Garten) #okayish
-# # plotResiduals(resid.Garten, form = varOfInterest$Ratio)
-# # plotResiduals(resid.Garten, form = varOfInterest$WoA)
-# # summary(model.Garten)
-# # plot(allEffects(model.Garten))
-# 
-# 
-# varOfInterest[, PredictGarten := predict(model.Garten, type="response")]
-# 
-# ggplot(varOfInterest, aes(x = WoA, y = Out, color = RatioSplit)) +
-#   #geom_jitter(size=2) +
-#   geom_line(data = varOfInterest[, mean(PredictGarten), by = .(WoA, RatioSplit)],
-#             aes(x = WoA, y =V1, colour = RatioSplit),size=1.5) +
-#   theme_classic(base_size = 18)+
-#   ylab("Out in wintergarten")
-# 
-# #plot individual variation
-# ggplot(data = varOfInterest, aes(x = WoA, y = PredictGarten, colour = as.factor(HenID))) +
-#   geom_line(aes(group = HenID), size=1)+
-#   labs(y = "Predicted probability to go in wintergarten",color = "Hen ID")+
-#   theme_classic(base_size = 18)+ theme(legend.position="none")+
-#   guides(color = guide_legend(nrow = 4))
-# 
-# #plot against actual data of some examples
-# ggplot(data = varOfInterest[Highlight != "Any",],
-#        aes(x = WoA, colour = as.factor(HenID))) +
-#   geom_jitter(aes(y = Out))+
-#   geom_line(aes(y = PredictGarten, group = HenID), size=1)+
-#   labs(y = "Predicted vertical travel distance",color = "Hen ID")+
-#   theme_classic(base_size = 18)+
-#   guides(color = guide_legend(nrow = 4))
-
-
-###### Feed reactivity #####
-
-hist(as.numeric(varOfInterest$FeedReact))
-model.Feed = lmer(FeedReact ~ Ratio*WoA + (1|Pen/HenID), data = varOfInterest)
-model.Feed2 = lmer(FeedReact ~ Ratio*WoA + Ratio*MaxZone + MaxZone*WoA+ (1|Pen/HenID), data = varOfInterest)
-model.Feed3 = lmer(FeedReact ~ Ratio*WoA + MaxZone + (1|Pen/HenID), data = varOfInterest)
-anova(model.Feed, model.Feed2)
-anova(model.Feed2, model.Feed3)
-#TODO: Model with maxzone better but informative?? 
-resid.Feed = simulateResiduals(model.Feed, 1000)
-plot(resid.Feed) 
-plotResiduals(resid.Feed, form = varOfInterest$Ratio[!is.na(varOfInterest$FeedReact)])
-plotResiduals(resid.Feed, form = varOfInterest$WoA[!is.na(varOfInterest$FeedReact)])
-plotResiduals(resid.Feed, form = varOfInterest$MaxZone[!is.na(varOfInterest$FeedReact)])
-summary(model.Feed)
-plot(allEffects(model.Feed))
-parameters(model.Feed)
-
-
-hist(varOfInterest$FeedZoneDur)
-model.Feed = lmer(FeedZoneDur ~ Ratio*WoA+ (1|Pen/HenID), data = varOfInterest)
-model.Feed = lmer(FeedZoneDur ~ Ratio*WoA+ (1|HenID), data = varOfInterest)
-resid.Feed = simulateResiduals(model.Feed, 1000)
-plot(resid.Feed) 
-plotResiduals(resid.Feed, form = varOfInterest$Ratio[!is.na(varOfInterest$FeedReact)])
-plotResiduals(resid.Feed, form = varOfInterest$WoA[!is.na(varOfInterest$FeedReact)])
-summary(model.Feed)
-plot(allEffects(model.Feed))
-
-
-plotData = as.data.table(emmeans(model.Feed, ~ pairwise ~ WoA*Ratio, 
-                                 at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
-                                            WoA = c(20, 26, 30, 35, 40, 47, 51, 55)), type = "response")$emmeans)
-
-
-varOfInterest[, PredictFeedReact:= predict(model.Feed)]
-
-ggplot()+ 
-  geom_jitter(data = varOfInterest, aes(x = WoA, y = FeedReact), height = 0.02, size = 1, alpha = 0.1)+
-  geom_line(data = plotData, aes(x = WoA, y = emmean, group = Ratio,  colour = as.factor(Ratio)), size = 1)+
-  #geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio), alpha = 0.1)+
-  #facet_grid(.~Pen)+
-  theme_classic(base_size = 18)
-
-
 
 
 #### Time series plots #########################
