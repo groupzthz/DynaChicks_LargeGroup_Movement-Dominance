@@ -21,6 +21,7 @@ library(broom.mixed)
 source("functions.R")
 source("prepareTracking.R")
 
+options(na.action = "na.fail")
 ##### Loading and preparing Data ###########
 #load tracking data
 trackingData <- fread("filtered_30s_full_combined.csv")
@@ -256,7 +257,8 @@ r.squaredGLMM(model.Weight, null.Weight)
 trend.Weight = emtrends(model.Weight, "WoA", va = "Ratio", at =  list(WoA = c(20, 26, 30, 35, 40, 47, 51, 55)))
 summary(trend.Weight)
 test.Weight = lmer(weight ~ poly(WoA, 2)+ WoA:Ratio + Ratio +(1|Pen), data = henDataLong[WoA <51,])
-
+test.Weight = lmer(weight ~ poly(WoA, 2)+(1|Pen), data = henDataLong[WoA <51,])
+r.squaredGLMM(test.Weight, null.Weight)
 
 plotData = as.data.table(emmeans(model.Weight, ~ pairwise ~ WoA*Ratio, at =  list(Ratio = round(quantile(henDataLong$Ratio), digits = 2),
                                                          WoA = c(20, 26, 30, 35, 40, 47, 51, 55)))$emmeans)
@@ -308,7 +310,6 @@ ggplot(data = henDataLong, aes(x = WoA, y = Severity, colour = Ratio))+
 hist(henDataLong$Severity) #normal but with a lot of zeros
 model.KBF = lmer(Severity ~ Ratio*WoA +(1|Pen), data = henDataLong)
 null.KBF =  lmer(Severity ~ 1 +(1|Pen), data = henDataLong)
-red.KBF =  lmer(Severity ~ WoA +(1|Pen), data = henDataLong)
 resid.KBF = simulateResiduals(model.KBF, 1000)
 plot(resid.KBF) #problem in left corner
 plotResiduals(resid.KBF, form = henDataLong[, Ratio]) #okay
@@ -329,8 +330,8 @@ summary(test.KBF) # estimate direction the same -> stick to full model
 
 anova(model.KBF, null.KBF)
 AIC(model.KBF, red.KBF)
-parameters(red.KBF)
-r.squaredGLMM(red.KBF)
+parameters(model.KBF)
+r.squaredGLMM(model.KBF, null.KBF)
 
 henDataLong[, mean(feathers), by = WoA]
 henDataLong[, diffFeath := feathers - shift(feathers), by = ID][, mean(diffFeath), by = WoA]
@@ -377,7 +378,7 @@ AIC(model.Feathers, null.Feathers)
 AIC(model.Feathers, red.Feathers)
 plot(allEffects(model.Feathers))
 tidy(model.Feathers, effects = "fixed", conf.int = TRUE, exponentiate = TRUE)
-r.squaredGLMM(red.Feathers, null.Feathers)
+r.squaredGLMM(model.Feathers, null.Feathers)
 
 
 #foot problems
@@ -458,6 +459,7 @@ rm(trackingData)
 ###### Between individuals ####
 betweenIndividuals = similarityBetween(trackingData[Date < as.Date("2020-03-15"),])
 betweenIndividuals2 = similarityBetween(trackingData[Date > as.Date("2020-03-14"),])
+testDay = similarityBetween(trackingData[Date == "2020-03-14",])
 
 meanData = data.table(Date = unique(trackingData$Date),
                       Mean = c(unlist(lapply(betweenIndividuals, function(x){ mean(x, na.rm = TRUE)})),
@@ -571,29 +573,83 @@ dataBetween= dataBetween[tableWoA, on = "Date", nomatch = NULL]
 #fwrite(dataBetween, "dataBetween.csv", sep = ";")
 dataBetween <- fread("dataBetween.csv")
 
+#create variables for model
+#mean aggression value
+dataBetween[, meanAggr := (Hen1_Ratio+Hen2_Ratio)/2]
+#absolute difference in aggression
+dataBetween[, diffAggr := abs(Hen1_Ratio-Hen2_Ratio)]
+#unique Dyad
+dataBetween[, Dyad := paste0(Hen1, "-",Hen2)]
+
+
 #build Model
 hist(dataBetween$Similarity)
 
-model.Between = lmer(Similarity ~ PenBool+ DiffRatio*WoA + (1|Hen1) + (1|Hen2), data = dataBetween)
-null.Between = lmer(Similarity ~ 1+ (1|Hen1) + (1|Hen2), data = dataBetween)
-anova(model.Between, null.Between)
-resid.Between = simulateResiduals(model.Between, 1000)
+
+
+
+fullmodel.Between = lmer(Similarity ~ meanAggr*diffAggr*PenBool*WoA + (1|Dyad), data = dataBetween)
+#TODO: try PenBool als nested
+fullmodel.Between = lmer(Similarity ~ meanAggr*diffAggr*WoA + (1|PenBool:Dyad), data = dataBetween)
+testmodel.Between = lmer(Similarity ~ meanAggr*diffAggr+ meanAggr*WoA + diffAggr*WoA + (1|PenBool:Dyad), data = dataBetween)
+
+resid.Between = simulateResiduals(fullmodel.Between, 1000)
 plot(resid.Between)
-plotResiduals(resid.Between, form = dataBetween$DiffRatio)
+plotResiduals(resid.Between, form = dataBetween$meanAggr)
+plotResiduals(resid.Between, form = dataBetween$diffAggr)
 plotResiduals(resid.Between, form = dataBetween$PenBool)
 plotResiduals(resid.Between, form = dataBetween$WoA)
-summary(model.Between)
-parameters(model.Between)
-plot(allEffects(model.Between))
+
+options(na.action = "na.fail")
+dd = dredge(fullmodel.Between)
+
+model.Between = lmer(Similarity ~ meanAggr*diffAggr+ PenBool*WoA + meanAggr*PenBool + meanAggr*WoA+
+                                  diffAggr*PenBool + diffAggr*WoA + (1|Dyad), data = dataBetween)
+
+drop1(testmodel.Between) #drop: mA*dA, mA*PB, dA*PB
+
+redmodel.Between = testmodel.Between = lmer(Similarity ~ meanAggr*diffAggr + diffAggr*WoA + (1|PenBool:Dyad), data = dataBetween)
+
+
+model.Between3 = lmer(Similarity ~ PenBool*WoA + meanAggr*WoA + diffAggr*WoA + (1|Dyad), data = dataBetween)
+
+AIC(fullmodel.Between, model.Between3) #fullmodel would be better
+resid.Between = simulateResiduals(model.Between3, 1000)
+plot(resid.Between)
+plotResiduals(resid.Between, form = dataBetween$meanAggr)
+plotResiduals(resid.Between, form = dataBetween$diffAggr)
+plotResiduals(resid.Between, form = dataBetween$PenBool)
+plotResiduals(resid.Between, form = dataBetween$WoA)
+
+null.Between = lmer(Similarity ~ 1+ (1|Dyad), data = dataBetween)
+null.Between = lmer(Similarity ~ 1+ (1|PenBool/Dyad), data = dataBetween)
+AIC(model.Between3, null.Between)
+
+summary(model.Between3)
+parameters(model.Between3)
+plot(allEffects(model.Between3))
 #variance explained by fixed factors and entire model
-r.squaredGLMM(model.Between, null.Between)
+r.squaredGLMM(model.Between3, null.Between)
 
-dataBetween[, PredictSimilarity := predict(model.Between)]
+dataBetween[, PredictSimilarity := predict(redmodel.Between)]
+#splitting dominance index by 0.5
+dataBetween[, RatioSplit := "High"]
+dataBetween[diffAggr < 0.5, RatioSplit := "Low"]
 
-ggplot(dataBetween[WoA %in% quantile(WoA),], aes(x = DiffRatio, y = Similarity)) +
+ggplot(data = dataBetween, aes(x = Date, y = Similarity))+ 
+  # geom_violin()+
+  geom_point(aes(colour = diffAggr))+
+  #geom_smooth(aes(colour = Ratio,group = as.factor(HenID)),se = F)+
+  geom_smooth(data = dataBetween[RatioSplit == "High", .(meanSim = mean(Similarity)), by = Date], aes(y = meanSim), linewidth = 1.5, se = F, colour = "black")+
+  geom_smooth(data = dataBetween[RatioSplit == "Low", .(meanSim = mean(Similarity)), by = Date], aes(y = meanSim), linewidth = 1.5, linetype = "dashed", colour = "black", se = F)+
+  theme_classic(base_size = 18)+
+  labs(x = 'Date', y = "Similarity")+
+  scale_color_gradient(low = "blue", high = "gold")
+
+ggplot(dataBetween[WoA %in% quantile(WoA),], aes(x = diffAggr, y = Similarity)) +
   geom_point(size=2) + 
-  geom_smooth(data = dataBetween[WoA %in% quantile(WoA), mean(PredictSimilarity), by = .(WoA, DiffRatio)], 
-            aes(y =V1), formula = y~x, size=1.5, colour = "red") + 
+  geom_smooth(data = dataBetween[WoA %in% quantile(WoA), mean(PredictSimilarity), by = .(WoA, diffAggr)], 
+            aes(y =V1), formula = y~x, linewidth=1.5, colour = "red") + 
   theme_classic(base_size = 18)+ 
   facet_grid(~WoA)+
   ylab("daily between-individual similarity")
@@ -704,6 +760,7 @@ dataWithin[Ratio < 0.5, RatioSplit := "Sub"]
 dataWithin <- fread("dataWithin.csv")
 #rm(dataWithin)
 
+hist(dataWithin$Similarity)
 model.Within = lmer(Similarity ~ Ratio*WoA + (1|Pen/HenID), data = dataWithin)
 #model.Within = lmer(Similarity ~ Ratio + (WoA|HenID), data = dataWithin)
 null.Within = lmer(Similarity ~ 1 + (1|Pen/HenID), data = dataWithin)
@@ -718,23 +775,37 @@ r.squaredGLMM(model.Within, null.Within)
 
 betaTableWithin = data.table(Run = "Orig", t(fixef(model.Within)))
 
-set.seed(42)
-for (i in 1:1000){
-  cat("Run:",i, "\n")
-  dataWithin[, Similarity_rand := sample(Similarity), by = Date]
-  model.Within.rand = lmer(Similarity_rand ~ Ratio*WoA + (1|Pen/HenID), data = dataWithin)
-  entry = data.table(Run = as.character(i), t(fixef(model.Within.rand)))
-  betaTableWithin= rbind(betaTableWithin, entry)
-}
-
-ggplot(data = betaTableWithin, aes(x= `Ratio:WoA`))+
-  geom_histogram()+
-  geom_vline(xintercept = betaTableWithin[Run == "Orig", `Ratio:WoA`], colour = "red")
-
-p = (sum(betaTableWithin[Run != "Orig", `Ratio:WoA`] <= betaTableWithin[Run == "Orig", `Ratio:WoA`]) + 1)/dim(betaTableWithin)[1]
+#TODO: random sample independent of day and Ratio?
+# set.seed(42)
+# for (i in 1:1000){
+#   cat("Run:",i, "\n")
+#   dataWithin[, Similarity_rand := sample(Similarity), by = Date]
+#   model.Within.rand = lmer(Similarity_rand ~ Ratio*WoA + (1|Pen/HenID), data = dataWithin)
+#   entry = data.table(Run = as.character(i), t(fixef(model.Within.rand)))
+#   betaTableWithin= rbind(betaTableWithin, entry)
+# }
+# 
+# ggplot(data = betaTableWithin, aes(x= `Ratio:WoA`))+
+#   geom_histogram()+
+#   geom_vline(xintercept = betaTableWithin[Run == "Orig", `Ratio:WoA`], colour = "red")
+# 
+# p = (sum(betaTableWithin[Run != "Orig", `Ratio:WoA`] <= betaTableWithin[Run == "Orig", `Ratio:WoA`]) + 1)/dim(betaTableWithin)[1]
 
 
 dataWithin[, PredictWithin := predict(model.Within)]
+#splitting dominance index by 0.5
+dataWithin[, RatioSplit := "Dom"]
+dataWithin[Ratio < 0.5, RatioSplit := "Sub"]
+
+ggplot(data = dataWithin, aes(x = Date, y = Similarity))+ 
+  # geom_violin()+
+  geom_point(aes(colour = Ratio))+
+  #geom_smooth(aes(colour = Ratio,group = as.factor(HenID)),se = F)+
+  geom_smooth(data = dataWithin[RatioSplit == "Dom", .(meanSim = mean(Similarity)), by = Date], aes(y = meanSim), linewidth = 1.5, se = F, colour = "black")+
+  geom_smooth(data = dataWithin[RatioSplit == "Sub", .(meanSim = mean(Similarity)), by = Date], aes(y = meanSim), linewidth = 1.5, linetype = "dashed", colour = "black", se = F)+
+  theme_classic(base_size = 18)+
+  labs(x = 'Date', y = "Similarity")+
+  scale_color_gradient(low = "blue", high = "gold")
 
 ggplot(dataWithin, aes(x = Date, y = Similarity, color = Ratio)) +
   geom_jitter(size=2) + 
@@ -742,12 +813,13 @@ ggplot(dataWithin, aes(x = Date, y = Similarity, color = Ratio)) +
   #geom_line(data = dataWithin[, mean(PredictWithin), by = .(Date, RatioSplit)], 
   #          aes(x = Date, y =V1, colour = RatioSplit),size=1.5) + 
   theme_classic(base_size = 18)+ 
-  ylab("daily within-individual similarity")#+ 
+  ylab("daily within-individual similarity")+
+  scale_color_gradient(low = "blue", high = "gold")
 
 ggplot(dataWithin[WoA %in% quantile(WoA),], aes(x = Ratio, y = Similarity)) +
   geom_point(size=2) + 
   geom_smooth(data = dataWithin[WoA %in% quantile(WoA), mean(PredictWithin), by = .(WoA, Ratio)], 
-              aes(y =V1), formula = y~x, method = lm, size=1.5, colour = "red") + 
+              aes(y =V1), formula = y~x, method = lm, linewidth=1.5, colour = "red") + 
   theme_classic(base_size = 18)+ 
   facet_grid(~WoA)+
   ylab("daily within-individual similarity")

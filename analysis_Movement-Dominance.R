@@ -18,6 +18,8 @@ library(glmmTMB)
 library(broom.mixed)
 library(Hmisc) #correlation matrix
 library(corrplot)#correlation plot
+library(RColorBrewer)
+library(ggpubr)#plot combin
 
 #load functions
 source("functions.R")
@@ -181,16 +183,6 @@ ggplot(data = henData, aes(x = Comb, y = weight_55))+
   theme_classic(base_size = 18)+
   labs(title = 'Visual signalling', x = 'Comb Size', y = "Weight")
 
-cor.test(henData$Comb, henData$weight_20)
-# correlated -> R = 0.4, p = 0.015
-cor.test(henData$Comb, henData$weight_26)
-# correlated -> R = 0.55, p <0.001
-cor.test(henData$Comb, henData$weight_55)
-# correlated -> R = 0.54, p <0.001
-cor.test(henData$weight_55, henData$weight_20)
-# correlated -> R = 0.5, p = 0.001
-cor.test(henData$weight_55, henData$weight_26)
-# correlated -> R = 0.82, p < 0.001
 
 model.Comb = lmer(Ratio ~ Comb +(1|Pen), data = henData)
 null.Comb =  lmer(Ratio ~ 1 +(1|Pen), data = henData)
@@ -203,11 +195,17 @@ parameters(model.Comb)
 r.squaredGLMM(model.Comb, null.Comb)
 
 henData[, PredictRatio:= predict(model.Comb)]
-ggplot(data = henData, aes(y = Ratio, x = Comb, ))+ 
+combsizeFig = ggplot(data = henData, aes(y = Ratio, x = Comb, ))+ 
   geom_point(aes(colour = as.factor(Pen)), size = 3)+
   geom_line(aes(y = PredictRatio, colour = as.factor(Pen)), size = 1.5)+
   #facet_grid(.~Pen)+
-  theme_classic(base_size = 18)
+  ylab("Aggression value")+
+  xlab("Comb size (cm²)")+
+  scale_colour_brewer(palette = "Paired", "Pen")+
+  theme_classic(base_size = 18)+
+  theme(panel.background = element_rect(color = "black", size = 1))
+
+ggsave("CombSize.tiff", combsizeFig, "tiff", width = 18, height= 14, units = "cm", dpi = 300)
 
 ###### Weight by dominance ####
 #descriptives
@@ -229,15 +227,20 @@ ggplot(data = henDataLong, aes(x = WoA, y = weight))+
   scale_color_gradient(low = "blue", high = "gold")
 
 #weight gain
-ggplot(data = henDataLong, aes(x = WoA, y = weight))+ 
+bodyMassFig = ggplot(data = henDataLong, aes(x = WoA, y = weight/1000))+ 
   # geom_violin()+
-  geom_point(aes(colour = Ratio), size = 1.5)+
-  geom_line(aes(group = ID, colour = Ratio), size = 0.2)+
-  geom_line(data = henDataLong[RatioSplit == "Dom", .(meanW = mean(weight)), by = WoA], aes(y = meanW), size = 1.5)+
-  geom_line(data = henDataLong[RatioSplit == "Sub", .(meanW = mean(weight)), by = WoA], aes(y = meanW), size = 1.5, linetype = "dashed")+
+  geom_point(aes(colour = Ratio), size = 1.5, alpha = 0.8)+
+  #geom_line(aes(group = ID, colour = Ratio), size = 0.2)+
+  geom_line(data = henDataLong[RatioSplit == "Dom", .(meanW = mean(weight/1000)), by = WoA], 
+            aes(y = meanW, linetype = ">0.5"), size = 0.9)+
+  geom_line(data = henDataLong[RatioSplit == "Sub", .(meanW = mean(weight/1000)), by = WoA], 
+            aes(y = meanW, linetype = "<0.5"), size = 0.9)+
   theme_classic(base_size = 18)+
-  labs(x = 'WoA', y = "Weight")+
-  scale_color_gradient(low = "blue", high = "gold")
+  labs(x = 'Weeks of age (WoA)', y = "Body mass (kg)")+
+  scale_color_gradient(low = "blue", high = "gold", "Agress. \nvalue")+
+  scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
+  guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
+  theme(panel.background = element_rect(color = "black", size = 1))
 
 
 henData[, gain := weight_55-weight_20]
@@ -297,12 +300,24 @@ ggplot()+
   theme_classic(base_size = 18)
 
 
+
 #Gain descriptive
 
 henData[, gain := weight_55 - weight_20, by = HenID]
 henData[Ratio < 0.17 , mean(gain)]
 henData[Ratio > 0.7 , mean(gain)]
 
+#correlations with comb size
+#cor.test(henData$Comb, henData$weight_20)
+# correlated -> R = 0.4, p = 0.015
+cor.test(henData$Comb, henData$weight_26, method = "pearson", conf.level = 0.95)
+# correlated -> R = 0.55, p <0.001
+cor.test(henData$Comb, henData$weight_55, method = "pearson", conf.level = 0.95)
+# correlated -> R = 0.54, p <0.001
+#cor.test(henData$weight_55, henData$weight_20)
+# correlated -> R = 0.5, p = 0.001
+cor.test(henData$weight_55, henData$weight_26)
+# correlated -> R = 0.82, p < 0.001
 
 
 ###### Health & social data ####
@@ -330,19 +345,21 @@ ggplot(data = henDataLong, aes(x = WoA, y = Severity, colour = Ratio))+
   scale_color_gradient(low = "blue", high = "gold")
 
 
-ggplot(data = henDataLong, aes(x = WoA, y = Severity))+ 
+kbfFig = ggplot(data = henDataLong, aes(x = WoA, y = Severity))+ 
   # geom_violin()+
-  geom_point(aes(colour = Ratio), size = 1.5)+
-  geom_line(aes(group = ID, colour = Ratio), size = 0.2)+
-  geom_line(data = henDataLong[RatioSplit == "Dom", .(meanKBF = mean(Severity)), by = WoA], aes(y = meanKBF), size = 1.5)+
-  geom_line(data = henDataLong[RatioSplit == "Sub", .(meanKBF = mean(Severity)), by = WoA], aes(y = meanKBF), size = 1.5, linetype = "dashed")+
+  geom_point(aes(color = Ratio), size = 1.5, alpha = 0.8)+
+  #geom_line(aes(group = ID, colour = Ratio), size = 0.2)+
+  geom_line(data = henDataLong[RatioSplit == "Dom", .(meanKBF = mean(Severity)), by = WoA], 
+            aes(y = meanKBF, linetype = ">0.5"), size = 0.9)+
+  geom_line(data = henDataLong[RatioSplit == "Sub", .(meanKBF = mean(Severity)), by = WoA], 
+            aes(y = meanKBF, linetype = "<0.5"), size = 0.9)+
   theme_classic(base_size = 18)+
-  labs(x = 'WoA', y = "KBF severity")+
-  scale_color_gradient(low = "blue", high = "gold")
+  labs(x = 'Weeks of Age (WoA)', y = "KBF severity")+
+  scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
+  scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
+  guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
+  theme(panel.background = element_rect(color = "black", size = 1))
 
-
-
-#TODO: two lowest ranking hens with really low severity -> not laying???
 
 hist(henDataLong$Severity) #normal but with a lot of zeros
 model.KBF = lmer(Severity ~ Ratio*WoA +(1|Pen/HenID), data = henDataLong)#singularity
@@ -372,6 +389,7 @@ AIC(model.KBF, red.KBF)
 parameters(red.KBF)
 r.squaredGLMM(red.KBF)
 
+
 henDataLong[, mean(feathers), by = WoA]
 henDataLong[, diffFeath := feathers - shift(feathers), by = ID][, mean(diffFeath), by = WoA]
 
@@ -394,15 +412,23 @@ ggplot(data = henDataLong, aes(x = WoA, y = feathers,colour = Ratio))+
   labs( x = 'WoA', y = "Feather loss")+
   scale_color_gradient(low = "blue", high = "gold")
 
-ggplot(data = henDataLong, aes(x = WoA, y = feathers))+ 
+plumFig = ggplot(data = henDataLong, aes(x = WoA, y = feathers))+ 
   # geom_violin()+
-  geom_point(aes(colour = Ratio), size = 1.5)+
-  geom_line(aes(group = ID, colour = Ratio),size = 0.2)+
-  geom_line(data = henDataLong[RatioSplit == "Dom", .(meanKBF = mean(feathers)), by = WoA], aes(y = meanKBF), size = 1.5)+
-  geom_line(data = henDataLong[RatioSplit == "Sub", .(meanKBF = mean(feathers)), by = WoA], aes(y = meanKBF), size = 1.5, linetype = "dashed")+
+  geom_point(aes(colour = Ratio), size = 1.5, alpha = 0.8)+
+  #geom_line(aes(group = ID, colour = Ratio),size = 0.2)+
+  geom_line(data = henDataLong[RatioSplit == "Dom", .(meanKBF = mean(feathers)), by = WoA], 
+            aes(y = meanKBF, linetype = ">0.5"), size = 0.9)+
+  geom_line(data = henDataLong[RatioSplit == "Sub", .(meanKBF = mean(feathers)), by = WoA], 
+            aes(y = meanKBF, linetype = "<0.5"), size = 0.9)+
   theme_classic(base_size = 18)+
-  labs(x = 'WoA', y = "KBF severity")+
-  scale_color_gradient(low = "blue", high = "gold")
+  labs(x = 'Weeks of age (WoA)', y = "Plumage condition")+
+  scale_color_gradient(low = "blue", high = "gold", "Aggress. \nvalue")+
+  scale_linetype_manual(name = NULL, 
+                        values = c(">0.5" = "solid", "<0.5" = "dashed"),
+                        ) +
+  guides(color = guide_colorbar(order = 1), 
+         linetype = guide_legend(order = 2)) +
+  theme(panel.background = element_rect(color = "black", size = 1))
 
 
 hist(henDataLong$feathers) 
@@ -469,6 +495,16 @@ ggplot(data = henDataLong, aes(x = WoA, y = comb,colour = Ratio))+
   theme_classic(base_size = 18)+
   labs( x = 'WoA', y = "Feather loss")+
   scale_color_gradient(low = "blue", high = "gold")
+
+
+
+###joint Fig
+
+fig = ggarrange(bodyMassFig,kbfFig, plumFig,ncol = 3, labels = c("a)", "b)", "c)"), 
+                font.label=list(color="black",size=18), common.legend = TRUE, legend = "right")
+ggsave("PhysicCond.tiff", fig, "tiff", width = 30, height= 10, units = "cm", dpi = 300)
+
+
 
 
 #health pca
@@ -688,6 +724,12 @@ varOfInterest[Ratio < 0.17 , mean(Tier_4), by = .(HenID, WoA)][WoA> 49, mean(V1)
 varOfInterest[Ratio > 0.7 , mean(Tier_4), by = .(HenID, WoA)][WoA <27, mean(V1)/60/60]
 varOfInterest[Ratio > 0.7 , mean(Tier_4), by = .(HenID, WoA)][WoA >49, mean(V1)/60/60]
 
+#duration in the litter for three lowest and three highest aggression value animals
+varOfInterest[Ratio < 0.17 , mean(Litter), by = .(HenID, WoA)][WoA< 27, mean(V1)/60/60]
+varOfInterest[Ratio < 0.17 , mean(Litter), by = .(HenID, WoA)][WoA> 49, mean(V1)/60/60]
+varOfInterest[Ratio > 0.7 , mean(Litter), by = .(HenID, WoA)][WoA <27, mean(V1)/60/60]
+varOfInterest[Ratio > 0.7 , mean(Litter), by = .(HenID, WoA)][WoA >49, mean(V1)/60/60]
+
 #duration in feed zones during runs
 varOfInterest[, .(mean(DurationFeed2)/60, sd(DurationFeed2)/60, mean(DurationFeed4)/60, sd(DurationFeed4)/60)]
 varOfInterest[Ratio < 0.17 , .(mean(DurationFeed2),mean(DurationFeed4)), by = .(HenID, WoA)][WoA< 27, .(mean(V1)/60, mean(V2)/60)]
@@ -696,7 +738,7 @@ varOfInterest[Ratio > 0.7 , .(mean(DurationFeed2),mean(DurationFeed4)), by = .(H
 varOfInterest[Ratio > 0.7 , .(mean(DurationFeed2),mean(DurationFeed4)), by = .(HenID, WoA)][WoA> 49, .(mean(V1)/60, mean(V2)/60)]
 
 
-ggplot(varOfInterest[WoA %in% c(22,31,40,47,54),], aes(x = DurationFeed2, y = DurationFeed4))+
+ggplot(varOfInterest[WoA %in% c(22,54),], aes(x = DurationFeed2, y = DurationFeed4))+
   geom_density2d_filled(contour_var = "ndensity")+
   #geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanDur2 = mean(DurationFeed2), meanDur4 = mean(DurationFeed4)), by = Date], aes(x = meanDur2, y = meanDur4), size = 1.5, colour = "red")+
   #geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanDur2 = mean(DurationFeed2), meanDur4 = mean(DurationFeed4)), by = Date], aes(x = meanDur2, y = meanDur4), size = 1.5, colour = "black")+
@@ -1129,16 +1171,27 @@ ggplot(varOfInterest, aes(x = Date, y = Tier_4))+
   geom_line(varOfInterest[RatioSplit == "Dom", .(meanDur = mean(Tier_4)), by = Date], aes(y = meanDur))+
   scale_color_gradient(low = "blue", high = "gold")
 
-ggplot(data = varOfInterest, aes(x = Date, y = Tier_4/60/60))+ 
-  # geom_violin()+
-  geom_point(aes(colour = Ratio))+
-  #geom_smooth(aes(colour = Ratio,group = as.factor(HenID)),se = F)+
-  geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanDur = mean(Tier_4)), by = Date], aes(y = meanDur/60/60), size = 1.5, se = F, colour = "black")+
-  geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanDur = mean(Tier_4)), by = Date], aes(y = meanDur/60/60), size = 1.5, linetype = "dashed", colour = "black", se = F)+
-  theme_classic(base_size = 18)+
-  labs(x = 'Date', y = "Tier_4 (in h)")+
-  scale_color_gradient(low = "blue", high = "gold")
+plotbreaks = as.IDate(c("2019-11-29", "2020-02-07", "2020-04-17", "2020-06-26"))
 
+topTierFig = ggplot(data = varOfInterest, aes(x = Date, y = Tier_4/60/60))+ 
+  # geom_violin()+
+  geom_point(aes(colour = Ratio), alpha = 0.5)+
+  #geom_smooth(aes(colour = Ratio,group = as.factor(HenID)),se = F)+
+  geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanDur = mean(Tier_4)), by = Date], 
+              aes(y = meanDur/60/60, linetype = ">0.5"), size = 0.9, colour = "black", se = F)+
+  geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanDur = mean(Tier_4)), by = Date], 
+              aes(y = meanDur/60/60, linetype = "<0.5"), size = 0.9, colour = "black", se = F)+
+  theme_classic(base_size = 18)+
+  labs(x = 'Weeks of age', y = "Time on top tier (h)")+
+  scale_x_continuous(breaks = plotbreaks, #which(!duplicated(varOfInterest[,WoA]))
+                     labels = c("25", "35", "45" , "55"))+
+  scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
+  scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
+  guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
+  theme(panel.background = element_rect(color = "black", size = 1))
+
+
+  
 
 #time spent on top and KBF
 ggplot(varOfInterest, aes(x = Date, y = Tier_4, colour = Severity))+
@@ -1160,14 +1213,23 @@ ggplot(varOfInterest, aes(x = Date, y = vertTravelDist, colour = Highlight))+
   geom_point()+
   geom_smooth(aes(group = as.factor(HenID)),se = F)+
   scale_colour_manual(values = c("grey", "red", "blue"))
-ggplot(varOfInterest, aes(x = Date, y = vertTravelDist, colour = Ratio))+
+
+travelDistFig = ggplot(varOfInterest, aes(x = Date, y = vertTravelDist))+
   geom_point(aes(colour = Ratio), alpha = 0.5)+
   #geom_smooth(aes(colour = Ratio,group = as.factor(HenID)),se = F)+
-  geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanTrav = mean(vertTravelDist)), by = Date], aes(y = meanTrav), size = 1.5, se = F, colour = "black")+
-  geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanTrav = mean(vertTravelDist)), by = Date], aes(y = meanTrav), size = 1.5, linetype = "dashed", colour = "black", se = F)+
+  geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanTrav = mean(vertTravelDist)), by = Date], 
+              aes(y = meanTrav, linetype = ">0.5"), size = 0.9, se = F, colour = "black")+
+  geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanTrav = mean(vertTravelDist)), by = Date], 
+              aes(y = meanTrav, linetype = "<0.5"), size = 0.9, colour = "black", se = F)+
   theme_classic(base_size = 18)+
-  labs(x = 'Date', y = "vertical travel distance")+
-  scale_color_gradient(low = "blue", high = "gold")
+  labs(x = 'Weeks of age', y = "Vertical travel distance")+
+  scale_x_continuous(breaks = plotbreaks, #which(!duplicated(varOfInterest[,WoA]))
+                     labels = c("25", "35", "45" , "55"))+
+  scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
+  scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
+  guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
+  theme(panel.background = element_rect(color = "black", size = 1))
+
 
 #compared to simple transition counts
 ggplot(socialData[, .(HenID,Ratio,Comb)][trackingData[, .N, by = .(HenID,Date)], on = "HenID"], aes(x = Date, y = N, colour = Ratio))+
@@ -1201,14 +1263,23 @@ ggplot(varOfInterest, aes(x = Tier_4, y = onTop, colour = Ratio))+
               method.args = list(family = "binomial"))+
   scale_color_gradient(low = "blue", high = "gold")
 
-ggplot(varOfInterest, aes(x = Date, y = onTop, colour = Ratio))+
-  geom_jitter(aes(colour = Ratio), height = 0.02, size = 1, alpha = 0.5)+
+sleepFig = ggplot(varOfInterest, aes(x = Date, y = onTop, colour = Ratio))+
+  geom_jitter(aes(colour = Ratio), height = 0.02, alpha = 0.5)+
   #geom_smooth(aes(colour = Ratio,group = as.factor(HenID)),se = F)+
-  geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanSleep = mean(onTop, na.rm = TRUE)), by = Date], aes(y = meanSleep), size = 1.5, se = F, colour = "black")+
-  geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanSleep = mean(onTop, na.rm = TRUE)), by = Date], aes(y = meanSleep), size = 1.5, linetype = "dashed", colour = "black", se = F)+
+  geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanSleep = mean(onTop, na.rm = TRUE)), by = Date], 
+              aes(y = meanSleep, linetype = ">0.5"), size = 0.9, se = F, colour = "black")+
+  geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanSleep = mean(onTop, na.rm = TRUE)), by = Date], 
+              aes(y = meanSleep, linetype = "<0.5"), size = 0.9, colour = "black", se = F)+
   theme_classic(base_size = 18)+
-  labs(x = 'Date', y = "Probability to sleep on top tier")+
-  scale_color_gradient(low = "blue", high = "gold")
+  labs(x = 'Weeks of age', y = "Odds to sleep on top tier")+
+  scale_x_continuous(breaks = plotbreaks, #which(!duplicated(varOfInterest[,WoA]))
+                     labels = c("25", "35", "45" , "55"))+
+  scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
+  scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
+  guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
+  theme(panel.background = element_rect(color = "black", size = 1))
+
+
 
 
 ###### Wintergarden ####
@@ -1268,14 +1339,22 @@ ggplot(varOfInterest, aes(x = Date, y = as.numeric(MedTimeNestLights), colour = 
   geom_smooth(aes(group = HenID),se = F)+
   scale_color_gradient(low = "blue", high = "gold")
 
-ggplot(nestData, aes(x = Date, y = as.numeric(MedTimeNestLights)/3600, colour = Ratio))+
+nestFig = ggplot(nestData, aes(x = Date, y = as.numeric(MedTimeNestLights)/3600, colour = Ratio))+
   geom_point(aes(colour = Ratio), alpha = 0.5)+
   #geom_smooth(aes(colour = Ratio,group = as.factor(HenID)),se = F)+
-  geom_smooth(data = nestData[RatioSplit == "Dom", .(meanNest = mean(as.numeric(MedTimeNestLights), na.rm = TRUE)/3600), by = Date], aes(y = meanNest), size = 1.5, se = F, colour = "black")+
-  geom_smooth(data = nestData[RatioSplit == "Sub", .(meanNest = mean(as.numeric(MedTimeNestLights), na.rm = TRUE)/3600), by = Date], aes(y = meanNest), size = 1.5, linetype = "dashed", colour = "black", se = F)+
+  geom_smooth(data = nestData[RatioSplit == "Dom", .(meanNest = mean(as.numeric(MedTimeNestLights), na.rm = TRUE)/3600), by = Date], 
+              aes(y = meanNest, linetype = ">0.5"), size = 0.9, se = F, colour = "black")+
+  geom_smooth(data = nestData[RatioSplit == "Sub", .(meanNest = mean(as.numeric(MedTimeNestLights), na.rm = TRUE)/3600), by = Date], 
+              aes(y = meanNest, linetype = "<0.5"), size = 0.9, colour = "black", se = F)+
   theme_classic(base_size = 18)+
-  labs(x = 'Date', y = "median nestbox time (in h)")+
-  scale_color_gradient(low = "blue", high = "gold")
+  labs(x = 'Weeks of age', y = "Median nestbox time (h)")+
+  scale_x_continuous(breaks = plotbreaks, #which(!duplicated(varOfInterest[,WoA]))
+                     labels = c("25", "35", "45" , "55"))+
+  scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
+  scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
+  guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
+  theme(panel.background = element_rect(color = "black", size = 1))
+
 
 #duration in the nestbox zone
 hist(as.numeric(varOfInterest$DurationNest))
@@ -1306,6 +1385,11 @@ ggplot(varOfInterest, aes(x = Date, y = preNestDist, colour = Ratio))+
   scale_color_gradient(low = "blue", high = "gold")
 
 
+###joint Fig
+
+fig = ggarrange(topTierFig,travelDistFig, nestFig,sleepFig, nrow = 4, labels = c("a)", "b)", "c)", "d)"), 
+                font.label=list(color="black",size=16), common.legend = TRUE, legend = "top", align = "hv")
+ggsave("DailyMove.tiff", fig, "tiff", width = 30, height= 43, units = "cm", dpi = 300)
 
 
 ###### Feed reactivity ####
@@ -1391,6 +1475,47 @@ times = list(ymd_hms(c("2019-11-10 04:00:00", "2019-11-10 17:30:00")),
              ymd_hms(c("2020-03-13 02:00:00", "2020-03-13 17:30:00")),
              ymd_hms(c("2020-05-08 02:00:00", "2020-05-08 17:30:00")),
              ymd_hms(c("2020-06-26 02:00:00", "2020-06-26 17:30:00")))
+
+
+#two lowest ranking hens with really low severity -> not laying???
+henDataLong[WoA == 55 & Severity < 2.5,]
+test1 = trackingData[Hen == "Hen_108"& WoA == 54]
+test2 = trackingData[Hen == "Hen_77"& WoA == 54]
+test3 = nestData[Hen == "Hen_108"]
+test4 = nestData[Hen == "Hen_77"]
+test3 = nestData[Hen == "Hen_84"]
+test4 = nestData[Hen == "Hen_30"]
+
+plotData = test2
+plotData[, Date := as.factor(as_date(Time))]
+plotData[, Time_x := as_hms(Time)]
+plotData[, Zone := factor(Zone, levels= c("Wintergarten", "Litter", "Tier_2", "Ramp_Nestbox", "Tier_4"))]
+ggplot(plotData, aes(x = Time_x, y = Zone)) + 
+  geom_step(group = 1) + 
+  geom_point() + 
+  labs(x = "time", y = "Zones") +
+  facet_grid(Date~.)+
+  theme_bw(base_size = 18)
+
+plotData = test3
+ggplot(plotData, aes(y = MedDurNest/60, x = Date)) + 
+  geom_point() + 
+  theme_bw(base_size = 18)
+
+plotData = varOfInterest
+plotData[, Highlight := 0]
+plotData[Hen == "Hen_108", Highlight := 5]
+plotData[Hen == "Hen_77", Highlight := 5]
+plotData[, Highlight := as.factor(Highlight)]
+plotData = henDataLong
+plotData[, Highlight := 0]
+plotData[Hen == "Hen_108", Highlight := 5]
+plotData[Hen == "Hen_77", Highlight := 5]
+
+ggplot(plotData, aes(x = WoA, y = feathers, colour = Highlight))+
+  geom_point()+
+  geom_smooth(aes(group = as.factor(HenID)),se = F)
+
 
 hen_list <- vector(mode='list', length=length(hens))
 splitHen = splitHenData(trackingData)
