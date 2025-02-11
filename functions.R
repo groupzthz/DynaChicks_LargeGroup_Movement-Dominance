@@ -462,6 +462,18 @@ plotTimeSeries = function(trackingData, henID, days){
     ggtitle(henID)
 }
 
+# Get upper triangle of the correlation matrix
+get_upper_tri <- function(cormat){
+  cormat[lower.tri(cormat)]<- NA
+  return(cormat)
+}
+
+reorder_cormat <- function(cormat){
+  # Use correlation between variables as distance
+  dd <- as.dist((1-cormat)/2)
+  hc <- hclust(dd)
+  cormat <-cormat[hc$order, hc$order]
+}
 
 #make overview plots per hen
 # for (i in 1:length(hens)){

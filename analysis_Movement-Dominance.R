@@ -41,27 +41,45 @@ combData = combData[Date < as_date("2020-01-01")]
 combData = combData[, .SD, .SDcols = c("Pen", "ID", "Date", "HenID", "TagID", "Mean5_7")]
 colnames(combData)[6] <- "Comb" 
 
+combDataControls = fread("ControlsComb.csv")
+combDataControls[,ID := paste0(Pen,Backpack)]
+combDataControls = combDataControls[,.(Comb = mean(Area)), by = .(Pen, Backpack,ID)]
+
 #prepare WoA table 
 tableWoA = data.table(Date = seq(ymd("2019-10-11"), ymd("2020-07-02"), by = "day"),
                       WoA = rep(18:55, each = 7))
 #load health data
 healthData = fread('HA_all.csv')
 healthData[,ID := paste0(pen,backpack)]
-#healthData = healthData[(date == "28.10.2019"| date == "09.12.2019" | date == "29.06.2020" | date == "30.06.2020")
-#                        & ID %in% unique(observData$ID),]
-healthData = healthData[ID %in% unique(observData$ID),]
 healthData[, feathers := neck + wings +tail + cloaca+ breast]
 healthData[, footproblems:= r_podo + r_bumble +r_injure + l_podo + l_bumble + l_injure]
 healthData[, date := as_date(date, format = "%d.%m.%Y")]
 healthData = healthData[tableWoA, on = c(date = "Date"), nomatch = NULL]
+
+healthDataControls = healthData[grepl('[0-9]', backpack),]
+healthDataControls= healthDataControls[,.(ID, pen, date, weight, feathers, wounds, comb, bare_head, footproblems)]
+healthDataControls[, Pen := pen]
+
+
+#healthData = healthData[(date == "28.10.2019"| date == "09.12.2019" | date == "29.06.2020" | date == "30.06.2020")
+#                        & ID %in% unique(observData$ID),]
+healthData = healthData[ID %in% unique(observData$ID),]
 healthDataWide = dcast(healthData, formula = ID ~ WoA, value.var = list("weight", "feathers", "wounds","comb", "bare_head", "footproblems"))
 
+
+
 KBF = fread("KBF_scores.csv")
-#KBF = KBF[(Date == "28.10.2019" |Date == "09.12.2019" | Date == "29.06.2020" | Date == "30.06.2020")
-#                        & HenID %in% unique(observData$ID),]
-KBF = KBF[HenID %in% unique(observData$ID),]
 KBF[, Date := as_date(Date, format = "%d.%m.%Y")]
 KBF = KBF[tableWoA, on = "Date", nomatch = NULL]
+#KBF = KBF[(Date == "28.10.2019" |Date == "09.12.2019" | Date == "29.06.2020" | Date == "30.06.2020")
+#                        & HenID %in% unique(observData$ID),]
+
+KBFControls = KBF[!is.na(no),]
+KBFControls[, ID := paste0(HenID,no)]
+healthDataControls = KBFControls[healthDataControls, on = "ID"]
+
+
+KBF = KBF[HenID %in% unique(observData$ID),]
 KBFWide = dcast(KBF, formula = HenID ~ WoA, value.var = "Severity")
 colnames(KBFWide)[2:length(colnames(KBFWide))] = paste("KBF", colnames(KBFWide)[2:length(colnames(KBFWide))], sep = "_")
 
@@ -207,15 +225,23 @@ combsizeFig = ggplot(data = henData, aes(y = Ratio, x = Comb, ))+
 
 ggsave("CombSize.tiff", combsizeFig, "tiff", width = 18, height= 14, units = "cm", dpi = 300)
 
-###### Weight by dominance ####
-#descriptives
-henDataLong[, mean(weight), by = WoA]
-henDataLong[Ratio < 0.17 , max(weight), by = ID][,mean(V1)]
-henDataLong[Ratio > 0.7 , max(weight), by = ID][,mean(V1)]
 
+
+###### Weight by dominance ####
 #splitting dominance index by 0.5
 henDataLong[, RatioSplit := "Dom"]
 henDataLong[Ratio < 0.5, RatioSplit := "Sub"]
+
+
+#descriptives
+henDataLong[, mean(weight), by = WoA]
+descrBodyM = henDataLong[RatioSplit == "Sub" , .(Low = mean(weight)), by = .(WoA)]
+temp =  henDataLong[RatioSplit == "Dom" , mean(weight), by = .(WoA)]
+descrBodyM[, High := temp$V1]
+descrBodyM[, Diff := High-Low]
+henDataLong[, .(mean(weight), sd(weight)), by = .(RatioSplit, WoA)]
+
+
 #weight gain
 ggplot(data = henDataLong, aes(x = WoA, y = weight))+ 
   # geom_violin()+
@@ -229,18 +255,40 @@ ggplot(data = henDataLong, aes(x = WoA, y = weight))+
 #weight gain
 bodyMassFig = ggplot(data = henDataLong, aes(x = WoA, y = weight/1000))+ 
   # geom_violin()+
-  geom_point(aes(colour = Ratio), size = 1.5, alpha = 0.8)+
+  geom_point(aes(colour = Ratio), size = 2.2, alpha = 0.8)+
   #geom_line(aes(group = ID, colour = Ratio), size = 0.2)+
   geom_line(data = henDataLong[RatioSplit == "Dom", .(meanW = mean(weight/1000)), by = WoA], 
-            aes(y = meanW, linetype = ">0.5"), size = 0.9)+
+            aes(y = meanW, linetype = ">0.5"), size = 1.2)+
   geom_line(data = henDataLong[RatioSplit == "Sub", .(meanW = mean(weight/1000)), by = WoA], 
-            aes(y = meanW, linetype = "<0.5"), size = 0.9)+
+            aes(y = meanW, linetype = "<0.5"), size = 1.2)+
   theme_classic(base_size = 18)+
-  labs(x = 'Weeks of age (WoA)', y = "Body mass (kg)")+
+  labs(x = 'Weeks of age', y = "Body mass (kg)")+
+  scale_x_continuous(breaks = c(25, 35, 45, 55),
+                     labels = c("25", "35", "45" , "55"))+
   scale_color_gradient(low = "blue", high = "gold", "Agress. \nvalue")+
   scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
   guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
   theme(panel.background = element_rect(color = "black", size = 1))
+
+
+  geom_point(aes(colour = Ratio), alpha = 0.5)+
+  #geom_smooth(aes(colour = Ratio,group = as.factor(HenID)),se = F)+
+  geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanDur = mean(Tier_4)), by = Date], 
+              aes(y = meanDur/60/60, linetype = ">0.5"), size = 0.9, colour = "black", se = F)+
+  geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanDur = mean(Tier_4)), by = Date], 
+              aes(y = meanDur/60/60, linetype = "<0.5"), size = 0.9, colour = "black", se = F)+
+  theme_classic(base_size = 18)+
+  labs(x = 'Weeks of age', y = "Time on top tier (h)")+
+  scale_x_continuous(breaks = plotbreaks, #which(!duplicated(varOfInterest[,WoA]))
+                     labels = c("25", "35", "45" , "55"))+
+  scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
+  scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
+  guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
+  theme(panel.background = element_rect(color = "black", size = 1))
+
+varOfInterest[, RatioSplit2 := "< 0.5"]
+varOfInterest[RatioSplit == "Dom", RatioSplit2 := "> 0.5"]
+
 
 
 henData[, gain := weight_55-weight_20]
@@ -301,11 +349,13 @@ ggplot()+
 
 
 
+
+
 #Gain descriptive
 
 henData[, gain := weight_55 - weight_20, by = HenID]
-henData[Ratio < 0.17 , mean(gain)]
-henData[Ratio > 0.7 , mean(gain)]
+henData[Ratio < 0.17 , .(mean(gain), sd(gain))]
+henData[Ratio > 0.7 , .(mean(gain), sd(gain))]
 
 #correlations with comb size
 #cor.test(henData$Comb, henData$weight_20)
@@ -322,7 +372,7 @@ cor.test(henData$weight_55, henData$weight_26)
 
 ###### Health & social data ####
 
-henDataLong[, mean(Severity), by = WoA]
+henDataLong[, .(mean(Severity), sd(Severity)), by = WoA]
 henDataLong[, diffKBFSev := Severity - shift(Severity), by = ID][, mean(diffKBFSev), by = WoA]
 
 #KBF and dominance
@@ -354,7 +404,9 @@ kbfFig = ggplot(data = henDataLong, aes(x = WoA, y = Severity))+
   geom_line(data = henDataLong[RatioSplit == "Sub", .(meanKBF = mean(Severity)), by = WoA], 
             aes(y = meanKBF, linetype = "<0.5"), size = 0.9)+
   theme_classic(base_size = 18)+
-  labs(x = 'Weeks of Age (WoA)', y = "KBF severity")+
+  labs(x = 'Weeks of Age', y = "KBF severity")+
+  scale_x_continuous(breaks = c(25, 35, 45, 55),
+                     labels = c("25", "35", "45" , "55"))+
   scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
   scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
   guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
@@ -390,7 +442,7 @@ parameters(red.KBF)
 r.squaredGLMM(red.KBF)
 
 
-henDataLong[, mean(feathers), by = WoA]
+henDataLong[, .(mean(feathers), sd(feathers)), by = WoA]
 henDataLong[, diffFeath := feathers - shift(feathers), by = ID][, mean(diffFeath), by = WoA]
 
 #feather cover
@@ -421,7 +473,9 @@ plumFig = ggplot(data = henDataLong, aes(x = WoA, y = feathers))+
   geom_line(data = henDataLong[RatioSplit == "Sub", .(meanKBF = mean(feathers)), by = WoA], 
             aes(y = meanKBF, linetype = "<0.5"), size = 0.9)+
   theme_classic(base_size = 18)+
-  labs(x = 'Weeks of age (WoA)', y = "Plumage condition")+
+  labs(x = 'Weeks of age', y = "Plumage condition")+
+  scale_x_continuous(breaks = c(25, 35, 45, 55),
+                     labels = c("25", "35", "45" , "55"))+
   scale_color_gradient(low = "blue", high = "gold", "Aggress. \nvalue")+
   scale_linetype_manual(name = NULL, 
                         values = c(">0.5" = "solid", "<0.5" = "dashed"),
@@ -461,6 +515,8 @@ AIC(model.Feathers, red.Feathers)
 plot(allEffects(model.Feathers))
 tidy(red.Feathers, effects = "fixed", conf.int = TRUE, exponentiate = TRUE)
 r.squaredGLMM(red.Feathers, null.Feathers)
+
+
 
 
 #foot problems
@@ -527,6 +583,107 @@ ggplot(data = henData, aes(y = Affil_rec, x = Ratio))+
   geom_point(aes(colour = as.factor(Pen)), size = 2)+
   geom_smooth(method = lm)+
   theme_classic(base_size = 18)
+
+###### Comparison with controls##########
+
+#comb size
+dataControlcomb = rbind(henData[,.(ID, Pen, Comb)], combDataControls[,.(ID, Pen, Comb)])
+dataControlcomb[1:36, Cat:= "Focal"]
+dataControlcomb[37:.N, Cat:= "Control"]
+
+ggplot(data = dataControlcomb, aes(y = Comb, x = Cat))+ 
+  geom_boxplot()+
+  geom_point(aes(colour = as.factor(Pen)), size = 3)+
+  theme_classic(base_size = 18)+
+  theme(panel.background = element_rect(color = "black", size = 1))
+
+model.Comb.Control = lmer(Comb ~ Cat +(1|Pen), data = dataControlcomb)
+model.Comb.Control = lm(Comb ~ Cat , data = dataControlcomb)
+resid.Comb = simulateResiduals(model.Comb.Control, 1000)
+plot(resid.Comb) #heteroscedacity
+# estimating the variance of y for different values of x
+variance = lm(abs(model.Comb.Control$residuals) ~ model.Comb.Control$fitted.values)$fitted.values^2
+# calculating the weights
+weights = 1 / variance
+# weighted regression model
+weighted.model.Comb.Control = lm(Comb ~ Cat , data = dataControlcomb, weights = weights)
+resid.Comb = simulateResiduals(weighted.model.Comb.Control, 1000)
+plot(resid.Comb) #good
+weighted.model.Comb.Control.null = lm(Comb ~ 1 , data = dataControlcomb, weights = weights)
+AIC(weighted.model.Comb.Control.null, weighted.model.Comb.Control)
+anova(weighted.model.Comb.Control.null, weighted.model.Comb.Control)
+summary(weighted.model.Comb.Control)
+parameters(weighted.model.Comb.Control)
+
+#health
+dataControlHealth = rbind(henDataLong[WoA == 55,.(ID, Pen, weight, feathers, wounds, comb, bare_head, footproblems, Severity)], 
+                          healthDataControls[,.(ID, Pen, weight, feathers, wounds, comb, bare_head, footproblems, Severity)])
+dataControlHealth[1:36, Cat:= "Focal"]
+dataControlHealth[37:.N, Cat:= "Control"]
+dataControlHealth[Cat == "Focal", weight := weight-15.6]
+
+
+ggplot(data = dataControlHealth, aes(y = weight, x = Cat))+ 
+  geom_boxplot()+
+  geom_point(aes(colour = as.factor(Pen)), size = 3)+
+  theme_classic(base_size = 18)+
+  theme(panel.background = element_rect(color = "black", size = 1))
+
+ggplot(data = dataControlHealth, aes(y = Severity, x = Cat))+ 
+  geom_boxplot()+
+  geom_point(aes(colour = as.factor(Pen)), size = 3)+
+  theme_classic(base_size = 18)+
+  theme(panel.background = element_rect(color = "black", size = 1))
+
+ggplot(data = dataControlHealth, aes(y = feathers, x = Cat))+ 
+  geom_boxplot()+
+  geom_point(aes(colour = as.factor(Pen)), size = 3)+
+  theme_classic(base_size = 18)+
+  theme(panel.background = element_rect(color = "black", size = 1))
+
+#not necesssary to compare (near zero variation)
+ggplot(data = dataControlHealth, aes(y = footproblems, x = Cat))+ 
+  geom_boxplot()+
+  geom_point(aes(colour = as.factor(Pen)), size = 3)+
+  theme_classic(base_size = 18)+
+  theme(panel.background = element_rect(color = "black", size = 1))
+
+hist(dataControlHealth$weight)
+model.weight.Control = lmer(weight ~ Cat +(1|Pen), data = dataControlHealth)
+model.weight.Control.null = lmer(weight ~ 1 +(1|Pen), data = dataControlHealth)
+resid.Weight = simulateResiduals(model.weight.Control, 1000)
+plot(resid.Weight) #good
+
+AIC(model.weight.Control, model.weight.Control.null)
+anova(model.weight.Control.null, model.weight.Control)
+
+summary(model.weight.Control)
+parameters(model.weight.Control)
+#variance explained by fixed factors and entire model
+r.squaredGLMM(model.weight.Control, model.weight.Control.null)
+
+hist(dataControlHealth$Severity)
+model.KBF.Control = lmer(Severity ~ Cat +(1|Pen), data = dataControlHealth)
+model.KBF.Control = lm(Severity ~ Cat, data = dataControlHealth)
+model.KBF.Control.null = lm(Severity ~ 1 , data = dataControlHealth)
+resid.KBF = simulateResiduals(model.KBF.Control, 1000)
+plot(resid.KBF) #good
+
+AIC(model.KBF.Control, model.KBF.Control.null) #not better
+anova( model.KBF.Control.null,model.KBF.Control)
+summary(model.KBF.Control)
+
+
+hist(dataControlHealth$feathers)
+model.feathers.Control = lmer(feathers ~ Cat +(1|Pen), data = dataControlHealth)
+model.feathers.Control.null = lmer(feathers ~ 1+(1|Pen) , data = dataControlHealth)
+resid.feathers = simulateResiduals(model.feathers.Control, 1000)
+plot(resid.feathers) #good
+
+AIC(model.feathers.Control, model.feathers.Control.null)
+anova(model.feathers.Control, model.feathers.Control.null)
+summary(model.feathers.Control)
+parameters(model.feathers.Control)
 
 ##### Tracking data processing ####
 
@@ -718,34 +875,41 @@ varOfInterest[, .(mean(Ramp_Nestbox)/60, sd(Ramp_Nestbox)/60)]
 #most common daily zone across individuals and WoA 
 varOfInterest[, .(mostCommonPercent = .N/nrow(varOfInterest)), by = MaxZone]
 
-#duration on top tier for three lowest and three highest aggression value animals
-varOfInterest[Ratio < 0.17 , mean(Tier_4), by = .(HenID, WoA)][WoA< 27, mean(V1)/60/60]
-varOfInterest[Ratio < 0.17 , mean(Tier_4), by = .(HenID, WoA)][WoA> 49, mean(V1)/60/60]
-varOfInterest[Ratio > 0.7 , mean(Tier_4), by = .(HenID, WoA)][WoA <27, mean(V1)/60/60]
-varOfInterest[Ratio > 0.7 , mean(Tier_4), by = .(HenID, WoA)][WoA >49, mean(V1)/60/60]
+#duration on top tier for threshold split at 0.5 of aggression value
+varOfInterest[RatioSplit == "Sub" , mean(Tier_4), by = .(HenID, WoA)][WoA< 27, mean(V1)/60/60]
+varOfInterest[RatioSplit  == "Sub" , mean(Tier_4), by = .(HenID, WoA)][WoA> 49, mean(V1)/60/60]
+varOfInterest[RatioSplit == "Dom" , mean(Tier_4), by = .(HenID, WoA)][WoA <27, mean(V1)/60/60]
+varOfInterest[RatioSplit == "Dom" , mean(Tier_4), by = .(HenID, WoA)][WoA >49, mean(V1)/60/60]
+
+descrTopTier = varOfInterest[RatioSplit == "Sub" , .(Low = mean(Tier_4)/60/60), by = .(WoA)]
+temp =  varOfInterest[RatioSplit == "Dom" , .(High = mean(Tier_4)/60/60), by = .(WoA)]
+descrTopTier[, High := temp$High]
+descrTopTier[, Diff := High-Low]
+descrTopTier[, DiffMin := Diff*60]
+
 
 #duration in the litter for three lowest and three highest aggression value animals
-varOfInterest[Ratio < 0.17 , mean(Litter), by = .(HenID, WoA)][WoA< 27, mean(V1)/60/60]
-varOfInterest[Ratio < 0.17 , mean(Litter), by = .(HenID, WoA)][WoA> 49, mean(V1)/60/60]
-varOfInterest[Ratio > 0.7 , mean(Litter), by = .(HenID, WoA)][WoA <27, mean(V1)/60/60]
-varOfInterest[Ratio > 0.7 , mean(Litter), by = .(HenID, WoA)][WoA >49, mean(V1)/60/60]
+varOfInterest[RatioSplit == "Sub" , mean(Litter), by = .(HenID, WoA)][WoA< 27, mean(V1)/60/60]
+varOfInterest[RatioSplit == "Sub" , mean(Litter), by = .(HenID, WoA)][WoA> 49, mean(V1)/60/60]
+varOfInterest[RatioSplit == "Dom" , mean(Litter), by = .(HenID, WoA)][WoA <27, mean(V1)/60/60]
+varOfInterest[RatioSplit == "Dom" , mean(Litter), by = .(HenID, WoA)][WoA >49, mean(V1)/60/60]
 
 #duration in feed zones during runs
 varOfInterest[, .(mean(DurationFeed2)/60, sd(DurationFeed2)/60, mean(DurationFeed4)/60, sd(DurationFeed4)/60)]
-varOfInterest[Ratio < 0.17 , .(mean(DurationFeed2),mean(DurationFeed4)), by = .(HenID, WoA)][WoA< 27, .(mean(V1)/60, mean(V2)/60)]
-varOfInterest[Ratio < 0.17 , .(mean(DurationFeed2),mean(DurationFeed4)), by = .(HenID, WoA)][WoA> 49, .(mean(V1)/60, mean(V2)/60)]
-varOfInterest[Ratio > 0.7 , .(mean(DurationFeed2),mean(DurationFeed4)), by = .(HenID, WoA)][WoA< 27, .(mean(V1)/60, mean(V2)/60)]
-varOfInterest[Ratio > 0.7 , .(mean(DurationFeed2),mean(DurationFeed4)), by = .(HenID, WoA)][WoA> 49, .(mean(V1)/60, mean(V2)/60)]
+varOfInterest[RatioSplit == "Sub" , .(mean(DurationFeed2),mean(DurationFeed4)), by = .(HenID, WoA)][WoA< 27, .(mean(V1)/60, mean(V2)/60)]
+varOfInterest[RatioSplit == "Sub" , .(mean(DurationFeed2),mean(DurationFeed4)), by = .(HenID, WoA)][WoA> 49, .(mean(V1)/60, mean(V2)/60)]
+varOfInterest[RatioSplit == "Dom" , .(mean(DurationFeed2),mean(DurationFeed4)), by = .(HenID, WoA)][WoA< 27, .(mean(V1)/60, mean(V2)/60)]
+varOfInterest[RatioSplit == "Dom" , .(mean(DurationFeed2),mean(DurationFeed4)), by = .(HenID, WoA)][WoA> 49, .(mean(V1)/60, mean(V2)/60)]
 
+descrFeedTier = varOfInterest[RatioSplit == "Sub" , .(Low2 = mean(DurationFeed2)/60,
+                                               Low4 = mean(DurationFeed4)/60), by = .(WoA)]
+temp =  varOfInterest[RatioSplit == "Dom" , .(High2 = mean(DurationFeed2)/60,
+                                      High4 = mean(DurationFeed4)/60), by = .(WoA)]
+descrFeedTier[, High2 := temp$High2]
+descrFeedTier[, High4 := temp$High4]
+descrFeedTier[, Diff2 := High2-Low2]
+descrFeedTier[, Diff4 := High4-Low4]
 
-ggplot(varOfInterest[WoA %in% c(22,54),], aes(x = DurationFeed2, y = DurationFeed4))+
-  geom_density2d_filled(contour_var = "ndensity")+
-  #geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanDur2 = mean(DurationFeed2), meanDur4 = mean(DurationFeed4)), by = Date], aes(x = meanDur2, y = meanDur4), size = 1.5, colour = "red")+
-  #geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanDur2 = mean(DurationFeed2), meanDur4 = mean(DurationFeed4)), by = Date], aes(x = meanDur2, y = meanDur4), size = 1.5, colour = "black")+
-  theme_classic(base_size = 18)+
-  facet_grid(RatioSplit~WoA)+
-  theme(legend.position="none")
-#scale_color_gradient(low = "blue", high = "gold")
 
 
 ###### 1 daily duration on top tier ####
@@ -821,10 +985,10 @@ ggplot()+
 ###### 2 Vertical distance ####
 #descriptives
 varOfInterest[, .(mean(vertTravelDist), sd(vertTravelDist))]
-varOfInterest[Ratio < 0.17 , mean(vertTravelDist), by = .(HenID, WoA)][WoA< 27, mean(V1)]
-varOfInterest[Ratio < 0.17 , mean(vertTravelDist), by = .(HenID, WoA)][WoA> 49, mean(V1)]
-varOfInterest[Ratio > 0.7 , mean(vertTravelDist), by = .(HenID, WoA)][WoA <27, mean(V1)]
-varOfInterest[Ratio > 0.7 , mean(vertTravelDist), by = .(HenID, WoA)][WoA >49, mean(V1)]
+varOfInterest[RatioSplit == "Sub" , mean(vertTravelDist), by = .(HenID, WoA)][WoA< 27, mean(V1)]
+varOfInterest[RatioSplit == "Sub" , mean(vertTravelDist), by = .(HenID, WoA)][WoA> 49, mean(V1)]
+varOfInterest[RatioSplit == "Dom" , mean(vertTravelDist), by = .(HenID, WoA)][WoA <27, mean(V1)]
+varOfInterest[RatioSplit == "Dom" , mean(vertTravelDist), by = .(HenID, WoA)][WoA >49, mean(V1)]
 
 
 hist(varOfInterest$vertTravelDist) #normally distributed with some outliers maybe
@@ -851,8 +1015,13 @@ r.squaredGLMM(test.Travel, null.Travel)
 plotData = as.data.table(emmeans(test.Travel, ~ pairwise ~ poly(WoA,2)+WoA:Ratio+ Ratio, 
                                  at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
                                             WoA = c(20, 26, 30, 35, 40, 47, 51, 55)))$emmeans)
-trend.vertDistance = emtrends(test.Travel, "Ratio", va = "WoA", at =  list(Ratio = unique(varOfInterest[Ratio<0.17 | Ratio >0.7, Ratio])), type = "response")
-summary(trend.vertDistance)
+trend.vertDistance = emtrends(test.Travel, "Ratio", va = "WoA", 
+                              at =  list(Ratio = unique(varOfInterest[Ratio < 0.5 | Ratio > 0.5, Ratio])), 
+                              type = "response",
+                              pbkrtest.limit = 6362)
+trends = as.data.table(summary(trend.vertDistance))
+trends[Ratio <0.5, mean(WoA.trend)]
+trends[Ratio >0.5, mean(WoA.trend)]
 
 
 varOfInterest[, PredictTravel := predict(test.Travel)]
@@ -952,20 +1121,21 @@ hist(varOfInterest$onTop)
 hist(varOfInterest[, sum(onTop), by = HenID][,V1])
 
 #descriptives
-varOfInterest[Ratio < 0.17 , mean(onTop), by = .(HenID, WoA)][WoA< 27, mean(V1)]
-varOfInterest[Ratio < 0.17 , mean(onTop), by = .(HenID, WoA)][WoA> 49, mean(V1)]
-varOfInterest[Ratio > 0.7 , mean(onTop), by = .(HenID, WoA)][WoA <27, mean(V1)]
-varOfInterest[Ratio > 0.7 , mean(onTop), by = .(HenID, WoA)][WoA >49, mean(V1)]
+varOfInterest[RatioSplit == "Sub" , mean(onTop), by = .(HenID, WoA)][WoA< 27, mean(V1)]
+varOfInterest[RatioSplit == "Sub" , mean(onTop), by = .(HenID, WoA)][WoA> 49, mean(V1)]
+varOfInterest[RatioSplit == "Dom" , mean(onTop), by = .(HenID, WoA)][WoA <27, mean(V1)]
+varOfInterest[RatioSplit == "Dom" , mean(onTop), by = .(HenID, WoA)][WoA >49, mean(V1)]
 
 model.Sleep = glmer(onTop ~ Ratio*WoA+ (1|Pen/HenID), data = varOfInterest, family = binomial)
 #singularity due to Pen
-model.Sleep = glmer(onTop ~ Ratio*WoA + (1|HenID),  data = varOfInterest, family = binomial)
+model.Sleep = glmer(onTop ~ WoA*Ratio + (1|HenID),  data = varOfInterest, family = binomial)
 null.Sleep = glmer(onTop ~ 1 + (1|HenID),  data = varOfInterest, family = binomial)
 resid.Sleep = simulateResiduals(model.Sleep, 1000)
 plot(resid.Sleep)#looks good
 plotResiduals(resid.Sleep, form = varOfInterest$Ratio[!is.na(varOfInterest$onTop)])
-plotResiduals(resid.Sleep, form = varOfInterest$DateID[!is.na(varOfInterest$onTop)])
+plotResiduals(resid.Sleep, form = varOfInterest$WoA[!is.na(varOfInterest$onTop)])#possible poly
 AIC(model.Sleep, null.Sleep) #better than null model
+
 summary(model.Sleep)
 parameters(model.Sleep, exp = TRUE) #TODO: why increased probability with age and WOA???
 plot(allEffects(model.Sleep))
@@ -974,6 +1144,16 @@ r.squaredGLMM(model.Sleep, null.Sleep)
 plotData = as.data.table(emmeans(model.Sleep, ~ pairwise ~ WoA*Ratio, 
                                  at =  list(Ratio = round(quantile(varOfInterest$Ratio), digits = 2),
                                             WoA = c(20, 26, 30, 35, 40, 47, 51, 55)), type = "response")$emmeans)
+
+exampleData = as.data.table(emmeans(model.Sleep, ~ pairwise ~ WoA*Ratio, 
+                                    at =  list(Ratio = unique(varOfInterest[Ratio<0.17 | Ratio >0.7, Ratio]),
+                                               WoA = c(20,21,22,23,24,25,50, 51, 52, 53, 54,55)), type = "response")$emmeans)
+
+exampleData[Ratio <0.17 & WoA <26, mean(prob)]
+exampleData[Ratio >0.17 & WoA <26, mean(prob)]
+
+exampleData[Ratio <0.17 & WoA >26, mean(prob)]
+exampleData[Ratio >0.17 & WoA >26, mean(prob)]
 
 
 varOfInterest[, PredictSleep:= predict(model.Sleep, type = "response")]
@@ -984,31 +1164,52 @@ ggplot()+
   geom_ribbon(data = plotData, aes(x = WoA, ymin = asymp.LCL, ymax = asymp.UCL, group = Ratio, fill = as.factor(Ratio)), alpha = 0.1)+
   #facet_grid(.~Pen)+
   theme_classic(base_size = 18)+
-  ylab("Odds of sleeping on top tier")
+  ylab("Probability of sleeping on top tier")
 
 
 
 
 ###### 5 correlations between parameters ####
 
-relVar = varOfInterest[, .(Duration_top = Tier_4, vertTravelDist, Dur2MedNest = as.numeric(MedTimeNestLights), SleepTop = onTop)]
-relVarPred = varOfInterest[, .(Duration_top = PredictDuration4, PredictTravel, Dur2MedNest = PredictNest, SleepTop = PredictSleep)]
+
+relVarPred = varOfInterest[, .(Duration_top = scale(PredictDuration4), 
+                               verTravel= scale(PredictTravel, center = TRUE), 
+                               Dur2MedNest = scale(PredictNest, center = TRUE), 
+                               SleepTop = scale(PredictSleep))]
 
 #correlation matrix
 
-corrMatr = cor(relVar,  use = "complete.obs") 
-corrMatr2 = cor(relVarPred,  use = "complete.obs") 
+corrMatr = cor(relVarPred,  use = "pairwise.complete.obs") 
+
+# Reorder the correlation matrix
+corrMatr <- reorder_cormat(corrMatr)
+upper_tri <- get_upper_tri(corrMatr)
+
+plotCorr = reshape2::melt(upper_tri, na.rm = TRUE)
+plotCorr = plotCorr[plotCorr$Var1 != plotCorr$Var2,]
+levels(plotCorr$Var1) = c("Duration on \n top tier", 
+                          "Sleeping on \n top tier", 
+                          "Vertical travel \ndistance",
+                          "Nestbox \ntiming")
+levels(plotCorr$Var2) = c("Duration on \n top tier",
+                           "Sleeping on \n top tier", 
+                          "Vertical travel \n distance",
+                          "Nestbox \ntiming")
 
 
-rcorr(as.matrix(relVar), type = "spearman")
-rcorr(as.matrix(relVarPred), type = "spearman")
+ggplot(plotCorr, aes(x = Var2, y = Var1, fill = value))+
+  geom_tile(color = "white")+
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Pearson's\ncorrelation") +
+  theme_minimal(base_size = 16)+ # minimal theme
+  theme(panel.grid.major = element_blank())+
+  coord_fixed()+
+  scale_x_discrete(position = "top") +
+  geom_text(aes(label = round(value, 2)), size = 5)+
+  labs(x = "", y = "")
 
-corrplot(corrMatr, type = "upper", order = "hclust", 
-         tl.col = "black", tl.srt = 45)
 
-library("PerformanceAnalytics")
-chart.Correlation(relVar, histogram=TRUE, pch=19)
-chart.Correlation(relVarPred, histogram=TRUE, pch=19)
 
 # ###### Wintergarten ####
 # 
@@ -1123,6 +1324,8 @@ chart.Correlation(relVarPred, histogram=TRUE, pch=19)
 
 ##### Movement inspection plots ####
 
+plotbreaks = as.IDate(c("2019-11-29", "2020-02-07", "2020-04-17", "2020-06-26"))
+
 ###### Durations in general ####
 
 #heatmap of durations by ratio (hens sorted)
@@ -1149,9 +1352,14 @@ ggplot(plot, aes(x = Zone, y = factor(HenID, levels = socialData$HenID))) +
 ggplot(varOfInterest, aes(x = Date, y = factor(MaxZone, levels = c("Wintergarten","Litter", "Tier_2", "Ramp_Nestbox", "Tier_4")), colour = Ratio))+
   geom_jitter(width = 0.1)+
   #geom_smooth(aes(group = as.factor(HenID)),se = F)+
-  labs(x = 'Date', y = "Most common daily zone")+
-  scale_color_gradient(low = "blue", high = "gold")+
-  theme_classic(base_size = 18)
+  labs(x = 'Weeks of age', y = "Zone with the highest daily duration")+
+  scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
+  theme_classic(base_size = 18)+
+  scale_x_continuous(breaks = plotbreaks, #which(!duplicated(varOfInterest[,WoA]))
+                     labels = c("25", "35", "45" , "55"))+
+  scale_y_discrete(labels = c("Wintergarden","Litter", "Tier 1", "Nestbox tier", "Tier 3"))+
+  theme(panel.background = element_rect(color = "black", size = 1))
+
 
 ggplot(varOfInterest, aes(x = Date, y = factor(MaxZone, levels = c("Wintergarten","Litter", "Tier_2", "Ramp_Nestbox", "Tier_4")), colour = Highlight))+
   geom_jitter()+
@@ -1171,7 +1379,7 @@ ggplot(varOfInterest, aes(x = Date, y = Tier_4))+
   geom_line(varOfInterest[RatioSplit == "Dom", .(meanDur = mean(Tier_4)), by = Date], aes(y = meanDur))+
   scale_color_gradient(low = "blue", high = "gold")
 
-plotbreaks = as.IDate(c("2019-11-29", "2020-02-07", "2020-04-17", "2020-06-26"))
+
 
 topTierFig = ggplot(data = varOfInterest, aes(x = Date, y = Tier_4/60/60))+ 
   # geom_violin()+
@@ -1190,8 +1398,46 @@ topTierFig = ggplot(data = varOfInterest, aes(x = Date, y = Tier_4/60/60))+
   guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
   theme(panel.background = element_rect(color = "black", size = 1))
 
+varOfInterest[, RatioSplit2 := "< 0.5"]
+varOfInterest[RatioSplit == "Dom", RatioSplit2 := "> 0.5"]
 
+
+#time in feed zones during feed run
+ggplot(varOfInterest[WoA %in% c(24,34, 44, 54),], aes(x = DurationFeed2/60, y = DurationFeed4/60))+
+  geom_density2d_filled(contour_var = "ndensity")+
+  theme_classic(base_size = 18)+
+  facet_grid(RatioSplit2~WoA)+
+  theme_classic(base_size = 18)+
+  labs(x = 'Duration on the top tier (min)', y = "Duration on the lower tier (min)", fill = "density \nrange")+
+  theme(legend.position = "top")
+#scale_color_gradient(low = "blue", high = "gold")
+
+#time in feed zones during feed run
+varOfInterest[, ratioFeed := (DurationFeed4/60)-(DurationFeed2/60)]
+ggplot(varOfInterest, aes(x = Date, y = ratioFeed))+
+  geom_point(aes(colour = Ratio), alpha = 0.5)+
+  geom_smooth(data = varOfInterest[RatioSplit == "Dom", .(meanDur = mean(Tier_4)), by = Date], 
+              aes(y = meanDur/60/60, linetype = ">0.5"), size = 0.9, colour = "black", se = F)+
+  geom_smooth(data = varOfInterest[RatioSplit == "Sub", .(meanDur = mean(Tier_4)), by = Date], 
+              aes(y = meanDur/60/60, linetype = "<0.5"), size = 0.9, colour = "black", se = F)+
+  theme_classic(base_size = 18)+
+  labs(x = 'Weeks of age', y = "Ratio: lower tier/top tier")+
+  scale_x_continuous(breaks = plotbreaks, #which(!duplicated(varOfInterest[,WoA]))
+                     labels = c("25", "35", "45" , "55"))+
+  scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
+  scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
+  guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
+  theme(panel.background = element_rect(color = "black", size = 1))
   
+#geom_density2d_filled(contour_var = "ndensity")+
+#  theme_classic(base_size = 18)+
+#  facet_grid(RatioSplit2~WoA)+
+#  theme_classic(base_size = 18)+
+#  labs(x = 'Duration on Tier 1 (min)', y = "Duration on Tier 3 (min)", fill = "density \nrange")+
+#  theme(legend.position = "top")
+#scale_color_gradient(low = "blue", high = "gold")
+
+
 
 #time spent on top and KBF
 ggplot(varOfInterest, aes(x = Date, y = Tier_4, colour = Severity))+
