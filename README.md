@@ -11,7 +11,7 @@ Only columns are listed which were used in the analysis.
    Output from raw tracking after validated filtering technique (see Candelotto et al., 2022).  
 
    **Columns:**  
-
+   |----------|-------------|
    | **Time**  | Time and date stamp of transition between zones of the aviary  |
    | **Zone**  | New zone after transition (Wintergarten, Litter, Tier_2, Ramp_Nestbox, Tier_4)  |
    | **Hen**  | Unique identifier of animal ("Hen_00")  |
@@ -21,7 +21,7 @@ Only columns are listed which were used in the analysis.
    Observed social interactions of focal individuals.  
 
    **Columns:**  
-
+   |----------|-------------|
    | **Observer**  | Who performed the observation (3 distinct observers)  |
    | **Reliability**  | Boolean to indicate whether to use the data for the reliability analysis  |
    | **Pen**  | Animal group out of 3, 4, 5, 10, 11, 12  |
@@ -36,7 +36,7 @@ Only columns are listed which were used in the analysis.
    Contains comb sizes of focal individuals, among other data.  
 
    **Columns:**  
-
+   |----------|-------------|
    | **Pen**  | Animal group out of 3, 4, 5, 10, 11, 12  |
    | **ID**  | Backpack colour (non-unique identifier)  |
    | **Date**  | Date a hen was outfitted with a backpack  |
@@ -48,7 +48,7 @@ Only columns are listed which were used in the analysis.
    Data on control cohort, to compare to focal individuals.  
 
    **Columns:**  
-
+   |----------|-------------|
    | **Pen**  | Animal group out of 3, 4, 5, 10, 11, 12  |
    | **Backpack**  | Unique numeric identifier of controls  |
    | **Area**  | Comb size (cm²)  |
@@ -57,7 +57,7 @@ Only columns are listed which were used in the analysis.
    Data of all physical assessments performed.  
 
    **Columns:**  
-
+   |----------|-------------|
    | **Date**  | Date of physical assessment  |
    | **Pen**  | Animal group out of 3, 4, 5, 10, 11, 12  |
    | **Backpack**  | Backpack colour (non-unique identifier)  |
@@ -71,7 +71,7 @@ Only columns are listed which were used in the analysis.
    Data of radiograph assessments of keel bone fracture severity.  
 
    **Columns:**  
-
+   |----------|-------------|
    | **Date**  | Date of radiograph  |
    | **HenID**  | Pen ID in addition to backpack colour (non-unique identifier)  |
    | **Severity**  | Keel fracture severity degree (0-10, 10 = highest severity)  |
@@ -80,7 +80,7 @@ Only columns are listed which were used in the analysis.
    Output of `prepareTracking()` function. The tracking data used for the analysis after preprocessing.  
 
    **Columns:**  
-
+   |----------|-------------|
    | **Time**  | Time and date stamp of transition between zones of the aviary  |
    | **Zone**  | New zone after transition (Wintergarten, Litter, Tier_2, Ramp_Nestbox, Tier_4)  |
    | **Hen**  | Unique identifier of animal ("Hen_00")  |
