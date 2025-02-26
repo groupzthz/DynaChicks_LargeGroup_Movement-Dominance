@@ -12,8 +12,6 @@ Only columns are listed which were used in the analysis.
 
    **Columns:**  
 
-   | Column   | Description  |
-   |----------|-------------|
    | **Time**  | Time and date stamp of transition between zones of the aviary  |
    | **Zone**  | New zone after transition (Wintergarten, Litter, Tier_2, Ramp_Nestbox, Tier_4)  |
    | **Hen**  | Unique identifier of animal ("Hen_00")  |
@@ -24,8 +22,6 @@ Only columns are listed which were used in the analysis.
 
    **Columns:**  
 
-   | Column   | Description  |
-   |----------|-------------|
    | **Observer**  | Who performed the observation (3 distinct observers)  |
    | **Reliability**  | Boolean to indicate whether to use the data for the reliability analysis  |
    | **Pen**  | Animal group out of 3, 4, 5, 10, 11, 12  |
@@ -41,8 +37,6 @@ Only columns are listed which were used in the analysis.
 
    **Columns:**  
 
-   | Column   | Description  |
-   |----------|-------------|
    | **Pen**  | Animal group out of 3, 4, 5, 10, 11, 12  |
    | **ID**  | Backpack colour (non-unique identifier)  |
    | **Date**  | Date a hen was outfitted with a backpack  |
@@ -55,8 +49,6 @@ Only columns are listed which were used in the analysis.
 
    **Columns:**  
 
-   | Column   | Description  |
-   |----------|-------------|
    | **Pen**  | Animal group out of 3, 4, 5, 10, 11, 12  |
    | **Backpack**  | Unique numeric identifier of controls  |
    | **Area**  | Comb size (cm²)  |
@@ -66,8 +58,6 @@ Only columns are listed which were used in the analysis.
 
    **Columns:**  
 
-   | Column   | Description  |
-   |----------|-------------|
    | **Date**  | Date of physical assessment  |
    | **Pen**  | Animal group out of 3, 4, 5, 10, 11, 12  |
    | **Backpack**  | Backpack colour (non-unique identifier)  |
@@ -82,8 +72,6 @@ Only columns are listed which were used in the analysis.
 
    **Columns:**  
 
-   | Column   | Description  |
-   |----------|-------------|
    | **Date**  | Date of radiograph  |
    | **HenID**  | Pen ID in addition to backpack colour (non-unique identifier)  |
    | **Severity**  | Keel fracture severity degree (0-10, 10 = highest severity)  |
@@ -93,8 +81,6 @@ Only columns are listed which were used in the analysis.
 
    **Columns:**  
 
-   | Column   | Description  |
-   |----------|-------------|
    | **Time**  | Time and date stamp of transition between zones of the aviary  |
    | **Zone**  | New zone after transition (Wintergarten, Litter, Tier_2, Ramp_Nestbox, Tier_4)  |
    | **Hen**  | Unique identifier of animal ("Hen_00")  |
