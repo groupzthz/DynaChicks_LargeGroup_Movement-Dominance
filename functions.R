@@ -1,4 +1,5 @@
-### functions KG
+### helper functions 
+
 library("zoo")  # for na.locf function
 
 # Extract a specific time period from a timeline

@@ -1,0 +1,12 @@
+Gmmevents()
+
+Uses clustering algorithm to detect events
+Within every week, within every pen, within antenna
+Transitions really define how well animals can be detected
+Within individuals gmmevents
+Events output -> average movement across individuals
+
+Mantel.test to test association matrix how similar across days? WoA? 
+Modularity test to check subclusters 
+
+Paper on asnipe package

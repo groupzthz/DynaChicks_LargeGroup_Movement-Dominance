@@ -1,8 +1,10 @@
-source("functions.R")
+source("helper_functions.R")
 
 #Function that takes tracking data input and outputs relevant data
-# input: trackingData = data table containing tracking data
-#        hens         = vector containing relevant animals 
+# input: trackingData = data.table containing tracking data
+#        hens         = vector containing relevant animals
+# output: trackingData = cleaned and data enriched data.table containing tracking data
+#                        ready for analysis                         
 
 prepareTrackingData <- function(trackingData, hens){
 
@@ -12,15 +14,17 @@ prepareTrackingData <- function(trackingData, hens){
   #extract only relevant hens
   trackingData = trackingData[HenID %in% hens,]
   
+  #create separate date and time vectors
   trackingData[, Time := ymd_hms(Time)]
   trackingData[, Date:= as_date(Time)]
   trackingData[, Pen := unlist(regmatches(PackID, gregexpr('\\(?[0-9,.]+', PackID)))]
   
+  #select only days after habituation period
   trackingData = trackingData[!(Date < as.IDate("2019-11-08")),]
   
   ###### Data preparations ################
   
-  #data cleaning step
+  #data cleaning steps
   #remove Wintergarten entries outside time that Wintergarten can be open
   #delete all Wintergarten entries at night (not possible, tracking system errors)
   trackingData = trackingData[!(hour(Time) > 16 & Zone == "Wintergarten"), ]
@@ -28,20 +32,20 @@ prepareTrackingData <- function(trackingData, hens){
   trackingData = trackingData[!(hour(Time) < 10 & Zone == "Wintergarten"), ]
   
   
-  #include light-dark cycle
+  #include light-dark cycle indicators
   trackingData[, Light := TRUE]
   trackingData[hour(Time) > 16, Light := FALSE]
   trackingData[month(Time)== 11 & day(Time) < 15 & hour(Time) < 4, Light := FALSE]
   trackingData[month(Time)== 11 & day(Time) < 22 & day(Time) > 14 & hour(Time) < 3, Light := FALSE]
   trackingData[(month(Time)!= 11| (month(Time)== 11 & day(Time) > 21)) & hour(Time) < 2, Light := FALSE]
-  #time shift on 29.03. (in tracking system) but done on the 30th for hens (delete days)
+  #time shift on 29.03. (in tracking system) but done on the 30th for hens (delete days further down)
   
   
   # mark true transitions
   trackingData[, TrueTransition := TRUE]
-  # mark transitions as not indicating day start and end
+  # mark entries (true transitions) as not indicating day start and end (will be added)
   trackingData[, DayIndic := F]
-  # mark transitions as not indicating lights on and off
+  # mark transitions as not indicating lights on and off (will be added)
   trackingData[, LightIndic := F]
   
   #splitting data into Hens
@@ -125,7 +129,7 @@ prepareTrackingData <- function(trackingData, hens){
   #remove unnecessary data from workspace
   rm(splitHen)
   
-  #make sure date is correct (now with inserting of end and start of day)
+  #ensuring date is correct (now with inserting of end and start of day)
   trackingData[, Date:= as_date(Time)]
 
   
@@ -180,7 +184,7 @@ prepareTrackingData <- function(trackingData, hens){
                                 Date == as.Date("2019-12-23")),]
   entriesPerDay = trackingData[, length(unique(Date)), by = HenID][V1 != 178,][, miss := 178-V1]
   length(unique(trackingData$Date)) #-> now we have 178 days in total of data
-  #TODO: what to do with hens with missing days? (especially HenID 1 (37 miss) & 65 (6 miss))
+  #hens with missing days: HenID 1 (37 miss) & 65 (6 miss)
   
   ###### last data additions and checks ######
   
