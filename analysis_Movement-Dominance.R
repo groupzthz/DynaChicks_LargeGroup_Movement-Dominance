@@ -20,6 +20,7 @@ library(Hmisc) #correlation matrix
 library(corrplot)#correlation plot
 library(RColorBrewer)
 library(ggpubr)#plot combination
+library(ggrepel)#to dodge labels
 library(sjPlot) #model parameters
 
 #for repeatable results
@@ -136,10 +137,20 @@ socialData[, Hen := paste0("Hen_", HenID)]
 socialData[,ID := factor(ID, levels = ID)]
 
 #quick overview of relative aggression values across focals
-ggplot(data = socialData, aes(x = ID, y = Aggr_value, colour = as.factor(Pen)))+ 
-  geom_point(size = 6)+
+AggressVal = ggplot(data = socialData, aes( x= 1, y = Aggr_value, label = ID))+ 
+  geom_point()+
+  geom_text_repel()+
   geom_hline(yintercept= 0.5, linetype='dashed')+
-  theme_classic(base_size = 18)
+  facet_grid(.~Pen)+
+  labs(x = "Focal individuals", y = "Relative aggression value")+
+  theme_classic(base_size = 18)+
+  theme(panel.background = element_rect(color = "black", 
+                                        linewidth = 1),
+        axis.text.x = element_blank(),  # Hide x-axis text
+        axis.ticks.x = element_blank(),  # Hide x-axis ticks
+        axis.line = element_blank())
+
+ggsave(path = "plots", "AggressVal.tiff", AggressVal, "tiff", width = 18, height= 14, units = "cm", dpi = 300)
 
 
 #create a wide and a long dataset with physical assessments and social information
@@ -188,17 +199,18 @@ henData[, PredictAggr_value:= predict(model.Comb)]
 
 #plot in supplementary
 # Relationship of aggression value and comb size
-combsizeFig = ggplot(data = henData, aes(y = Aggr_value, x = Comb, ))+ 
+combsizeFig = ggplot(data = henData, aes(y = Aggr_value, x = Comb))+ 
   geom_point(aes(colour = as.factor(Pen)), size = 3)+
   geom_line(aes(y = PredictAggr_value, colour = as.factor(Pen)), size = 1.5)+
   #facet_grid(.~Pen)+
-  ylab("Aggression value")+
+  ylab("Relative aggression value")+
   xlab("Comb size (cm²)")+
   scale_colour_brewer(palette = "Paired", "Pen")+
   theme_classic(base_size = 18)+
-  theme(panel.background = element_rect(color = "black", linewidth = 1))
+  theme(panel.background = element_rect(color = "black", linewidth = 1),
+        axis.line = element_blank())
 
-ggsave("CombSize.tiff", combsizeFig, "tiff", width = 18, height= 14, units = "cm", dpi = 300)
+ggsave(path = "plots", "CombSize.tiff", combsizeFig, "tiff", width = 18, height= 14, units = "cm", dpi = 300)
 
 
 ##### Physical condition ####
@@ -273,7 +285,8 @@ bodyMassFig = ggplot(data = henDataLong, aes(x = WoA, y = weight/1000))+
   scale_color_gradient(low = "blue", high = "gold", "Agress. \nvalue")+
   scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
   guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
-  theme(panel.background = element_rect(color = "black", linewidth = 1))
+  theme(panel.background = element_rect(color = "black", linewidth = 1),
+        axis.line = element_blank())
 
 
 
@@ -352,7 +365,8 @@ kbfFig = ggplot(data = henDataLong, aes(x = WoA, y = Severity))+
   scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
   scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
   guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
-  theme(panel.background = element_rect(color = "black", size = 1))
+  theme(panel.background = element_rect(color = "black", size = 1),
+        axis.line = element_blank())
 
 
 
@@ -413,7 +427,8 @@ plumFig = ggplot(data = henDataLong, aes(x = WoA, y = feathers))+
   ) +
   guides(color = guide_colorbar(order = 1), 
          linetype = guide_legend(order = 2)) +
-  theme(panel.background = element_rect(color = "black", size = 1))
+  theme(panel.background = element_rect(color = "black", size = 1),
+        axis.line = element_blank())
 
 
 ####### Foot problems #######
@@ -447,7 +462,7 @@ ggplot(data = henDataLong, aes(x = WoA, y = wounds,colour = Aggr_value))+
 
 fig = ggarrange(bodyMassFig,kbfFig, plumFig,ncol = 3, labels = c("a)", "b)", "c)"), 
                 font.label=list(color="black",size=18), common.legend = TRUE, legend = "right")
-ggsave(path = "plots", "PhysicCond.tiff", fig, "tiff", width = 30, height= 10, units = "cm", dpi = 300)
+ggsave(path = "plots", "PhysicCond.tiff", fig, "tiff", width = 35, height= 10, units = "cm", dpi = 300)
 
 
 ###### Comparison with controls##########
@@ -577,6 +592,7 @@ source('prepareTracking.R')
 #relevant hens
 hens = sort(unique(socialData$HenID))
 
+#OR if no interest in running clean and prep jump to line 590 and uncomment 
 trackingData = prepareTrackingData(trackingData, hens)
 #include Week of age
 trackingData = trackingData[tableWoA, on = "Date", nomatch = NULL]
@@ -738,7 +754,8 @@ CommonDailyZone = ggplot(varOfInterest, aes(x = Date, y = MaxZone, colour = Aggr
   scale_x_continuous(breaks = plotbreaks, #which(!duplicated(varOfInterest[,WoA]))
                      labels = c("25", "35", "45" , "55"))+
   #scale_y_discrete(labels = c("Wintergarden","Litter", "Tier 1", "Nestbox tier", "Tier 3"))+
-  theme(panel.background = element_rect(color = "black", linewidth = 1))
+  theme(panel.background = element_rect(color = "black", linewidth = 1),
+        axis.line = element_blank())
 
 ggsave(path = "plots", "CommonDailyZone.tiff", CommonDailyZone, "tiff", width = 35, height= 12, units = "cm", dpi = 300)
 
@@ -890,7 +907,8 @@ topTierFig = ggplot(data = varOfInterest, aes(x = Date, y = Tier_4/60/60))+
   scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
   scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
   guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
-  theme(panel.background = element_rect(color = "black", linewidth = 1))
+  theme(panel.background = element_rect(color = "black", linewidth = 1),
+        axis.line = element_blank())
 
 
 ###### 2 Vertical distance ####
@@ -922,6 +940,7 @@ null.Travel = lmer(vertTravelDist ~ 1 + (1|Pen/HenID), data = varOfInterest)
 AIC(test.Travel, null.Travel)#test is better
 summary(test.Travel)
 parameters(test.Travel)
+tab_model(test.Travel)
 plot(allEffects(test.Travel))
 #variance explained
 r.squaredGLMM(test.Travel, null.Travel)
@@ -968,7 +987,8 @@ travelDistFig = ggplot(varOfInterest, aes(x = Date, y = vertTravelDist))+
   scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
   scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
   guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
-  theme(panel.background = element_rect(color = "black", size = 1))
+  theme(panel.background = element_rect(color = "black", size = 1),
+        axis.line = element_blank())
 
 
 ###### 3 Nestbox Time #####
@@ -1007,6 +1027,7 @@ AIC(test.Nest2, test.Nest) # #removing interaction does not improve fit unless r
 summary(test.Nest)
 parameters(test.Nest)
 plot(allEffects(test.Nest))
+tab_model(test.Nest)
 #variance epxplained
 r.squaredGLMM(test.Nest, null.Nest)
 
@@ -1049,7 +1070,8 @@ nestFig = ggplot(nestData, aes(x = Date, y = as.numeric(MedTimeNestLights)/3600,
   scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
   scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
   guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
-  theme(panel.background = element_rect(color = "black", size = 1))
+  theme(panel.background = element_rect(color = "black", size = 1),
+        axis.line = element_blank())
 
 
 ###### 4 Sleeping spot #####
@@ -1109,13 +1131,14 @@ sleepFig = ggplot(varOfInterest, aes(x = Date, y = onTop, colour = Aggr_value))+
   geom_smooth(data = varOfInterest[Aggr_valueSplit == "< 0.5", .(meanSleep = mean(onTop, na.rm = TRUE)), by = Date], 
               aes(y = meanSleep, linetype = "<0.5"), size = 0.9, colour = "black", se = F)+
   theme_classic(base_size = 18)+
-  labs(x = 'Weeks of age', y = "Odds to sleep on top tier")+
+  labs(x = 'Weeks of age', y = "Prob. to sleep on top tier")+
   scale_x_continuous(breaks = plotbreaks, #which(!duplicated(varOfInterest[,WoA]))
                      labels = c("25", "35", "45" , "55"))+
   scale_color_gradient(low = "blue", high = "gold", name = "Agress. \nvalue")+
   scale_linetype_manual(name = NULL, values = c(">0.5" = "solid", "<0.5" = "dashed")) +
   guides(color = guide_colorbar(order = 1), linetype = guide_legend(order = 2)) +
-  theme(panel.background = element_rect(color = "black", size = 1))
+  theme(panel.background = element_rect(color = "black", linewidth = 1),
+        axis.line = element_blank())
 
 
 ###joint Fig
@@ -1170,4 +1193,4 @@ CorrPlot = ggplot(plotCorr, aes(x = Var2, y = Var1, fill = value))+
   geom_text(aes(label = round(value, 2)), size = 3)+
   labs(x = "", y = "")
 
-ggsave(path = "plots", "CorrPlot.tiff", CorrPlot, "tiff", width = 10, height= 8, units = "cm", dpi = 300)
+ggsave(path = "plots", "CorrPlot.tiff", CorrPlot, "tiff", width = 10, height= 8, units = "cm", dpi = 300, bg = "white")
