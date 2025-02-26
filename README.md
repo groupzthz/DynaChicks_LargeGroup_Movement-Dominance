@@ -10,7 +10,7 @@ Only columns are listed which were used in the analysis.
 1. **filtered_30s_full_combined.csv**  
    Output from raw tracking after validated filtering technique (see Candelotto et al., 2022).  
 
-   **Columns:**  
+   | Column   | Description  |
    |----------|-------------|
    | **Time**  | Time and date stamp of transition between zones of the aviary  |
    | **Zone**  | New zone after transition (Wintergarten, Litter, Tier_2, Ramp_Nestbox, Tier_4)  |
@@ -20,7 +20,7 @@ Only columns are listed which were used in the analysis.
 2. **socialData.csv**  
    Observed social interactions of focal individuals.  
 
-   **Columns:**  
+   | Column   | Description  |
    |----------|-------------|
    | **Observer**  | Who performed the observation (3 distinct observers)  |
    | **Reliability**  | Boolean to indicate whether to use the data for the reliability analysis  |
@@ -34,8 +34,8 @@ Only columns are listed which were used in the analysis.
 
 3. **focalSelection.csv**  
    Contains comb sizes of focal individuals, among other data.  
-
-   **Columns:**  
+   
+   | Column   | Description  |
    |----------|-------------|
    | **Pen**  | Animal group out of 3, 4, 5, 10, 11, 12  |
    | **ID**  | Backpack colour (non-unique identifier)  |
@@ -47,7 +47,7 @@ Only columns are listed which were used in the analysis.
 4. **ControlsComb.csv**  
    Data on control cohort, to compare to focal individuals.  
 
-   **Columns:**  
+   | Column   | Description  |
    |----------|-------------|
    | **Pen**  | Animal group out of 3, 4, 5, 10, 11, 12  |
    | **Backpack**  | Unique numeric identifier of controls  |
@@ -56,7 +56,7 @@ Only columns are listed which were used in the analysis.
 5. **HA_all.csv**  
    Data of all physical assessments performed.  
 
-   **Columns:**  
+   | Column   | Description  |
    |----------|-------------|
    | **Date**  | Date of physical assessment  |
    | **Pen**  | Animal group out of 3, 4, 5, 10, 11, 12  |
@@ -70,7 +70,7 @@ Only columns are listed which were used in the analysis.
 6. **KBF_scores.csv**  
    Data of radiograph assessments of keel bone fracture severity.  
 
-   **Columns:**  
+   | Column   | Description  |
    |----------|-------------|
    | **Date**  | Date of radiograph  |
    | **HenID**  | Pen ID in addition to backpack colour (non-unique identifier)  |
@@ -79,7 +79,7 @@ Only columns are listed which were used in the analysis.
 7. **trackingData.csv**  
    Output of `prepareTracking()` function. The tracking data used for the analysis after preprocessing.  
 
-   **Columns:**  
+   | Column   | Description  |
    |----------|-------------|
    | **Time**  | Time and date stamp of transition between zones of the aviary  |
    | **Zone**  | New zone after transition (Wintergarten, Litter, Tier_2, Ramp_Nestbox, Tier_4)  |
